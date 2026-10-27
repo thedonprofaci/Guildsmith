@@ -26,6 +26,7 @@
     <ProjectReference Include="..\..\src\Guildsmith.Core\Guildsmith.Core.csproj" />
     <ProjectReference Include="..\..\src\Guildsmith.Discord\Guildsmith.Discord.csproj" />
     <ProjectReference Include="..\..\src\Guildsmith.Server\Guildsmith.Server.csproj" />
+    <ProjectReference Include="..\Guildsmith.TestCountFloor\Guildsmith.TestCountFloor.csproj" />
   </ItemGroup>
 
 </Project>

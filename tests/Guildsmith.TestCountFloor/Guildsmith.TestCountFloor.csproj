@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    CI's test-count floor: reads the executed count out of the run's .trx and fails below the
+    committed minimum (tests/test-count-floor.txt). Not a test project; its tests live in
+    Guildsmith.Tests/TestCountFloor/ so the same `dotnet test` run that it checks also tests it.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>false</IsTestProject>
+  </PropertyGroup>
+
+</Project>
