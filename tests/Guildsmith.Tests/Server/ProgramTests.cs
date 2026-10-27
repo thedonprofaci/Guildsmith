@@ -101,6 +101,9 @@ public sealed class ProgramTests
         await pump;
         string output = Encoding.UTF8.GetString(stdout.ToArray());
 
+        // A clean session ends in 0: an MCP client or a supervisor reads any other code as a crash.
+        Assert.Equal(0, server.ExitCode);
+
         // Exactly the two responses the client asked for: initialize and tools/list.
         string[] lines = output.Split('\n', StringSplitOptions.RemoveEmptyEntries);
         Assert.Equal(2, lines.Length);
