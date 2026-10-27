@@ -259,6 +259,11 @@ public sealed class GuardPipelineTests
         ToolTarget.Message("5001", "18446744073709551616"),
         ToolTarget.Message("", "7001"),
         ToolTarget.Message("5001", "7001", "x"),
+        // An empty guild_id is supplied, not absent: it must be parsed and refused, not skipped
+        // so that the ID alone decides the guild.
+        ToolTarget.Channel("5001", ""),
+        ToolTarget.Role("6002", ""),
+        ToolTarget.Message("5001", "7001", ""),
     };
 
     [Theory]
