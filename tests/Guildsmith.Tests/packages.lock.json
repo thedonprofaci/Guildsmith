@@ -510,7 +510,10 @@
         }
       },
       "guildsmith.core": {
-        "type": "Project"
+        "type": "Project",
+        "dependencies": {
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.13, )"
+        }
       },
       "guildsmith.discord": {
         "type": "Project",
