@@ -4,6 +4,8 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
+    <!-- Read only when DOTNET_ENVIRONMENT=Development (ServerStartup.AddConfigurationSources). -->
+    <UserSecretsId>guildsmith-server-7d1f4c52-3a8e-4b6f-9c0d-2e5a1b7f8c93</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>
