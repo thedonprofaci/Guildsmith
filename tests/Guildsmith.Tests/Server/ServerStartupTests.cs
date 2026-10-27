@@ -269,6 +269,27 @@ public sealed class ServerStartupTests
         Assert.DoesNotContain(Token, stderr.ToString(), StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task RunAsync_rejects_a_null_stderr_writer()
+    {
+        // An empty configuration is refused before the logger provider would reject the writer.
+        HostApplicationBuilder builder = Host.CreateEmptyApplicationBuilder(new HostApplicationBuilderSettings());
+
+        await Assert.ThrowsAsync<ArgumentNullException>(() => ServerStartup.RunAsync(null!, builder, static _ => Task.CompletedTask));
+    }
+
+    [Fact]
+    public async Task RunAsync_rejects_a_null_builder()
+    {
+        await Assert.ThrowsAsync<ArgumentNullException>(() => ServerStartup.RunAsync(new StringWriter(), null!, static _ => Task.CompletedTask));
+    }
+
+    [Fact]
+    public async Task RunAsync_rejects_a_null_run_delegate()
+    {
+        await Assert.ThrowsAsync<ArgumentNullException>(() => ServerStartup.RunAsync(new StringWriter(), ValidBuilder(), null!));
+    }
+
     private static HostApplicationBuilder ValidBuilder()
     {
         HostApplicationBuilder builder = Host.CreateEmptyApplicationBuilder(new HostApplicationBuilderSettings());
