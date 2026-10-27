@@ -1,10 +1,11 @@
 using Guildsmith.Core.Configuration;
+using Guildsmith.Core.Security;
+using Guildsmith.Server.Logging;
 
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Console;
 
 namespace Guildsmith.Server;
 
@@ -17,11 +18,14 @@ public static class ServerStartup
     /// <summary>The exit code of a startup refused because the configuration is invalid.</summary>
     public const int InvalidConfigurationExitCode = 1;
 
+    /// <summary>The exit code of a server stopped by an exception from building or running the host.</summary>
+    public const int HostFailureExitCode = 2;
+
     /// <summary>
     /// Validates the configuration, then serves MCP over stdio until the client disconnects.
     /// Startup constructs no Discord client and makes no network call.
     /// </summary>
-    public static async Task<int> RunAsync(TextWriter stderr)
+    public static Task<int> RunAsync(TextWriter stderr)
     {
         HostApplicationBuilder builder = Host.CreateEmptyApplicationBuilder(new HostApplicationBuilderSettings
         {
@@ -29,16 +33,42 @@ public static class ServerStartup
         });
         AddConfigurationSources(builder.Configuration, builder.Environment);
 
+        return RunAsync(stderr, builder, static host => host.RunAsync());
+    }
+
+    /// <summary>
+    /// <see cref="RunAsync(TextWriter)"/> over a prepared <paramref name="builder"/>, with
+    /// <paramref name="run"/> in place of <see cref="HostingAbstractionsHostExtensions.RunAsync"/>.
+    /// Everything it writes to <paramref name="stderr"/> is redacted.
+    /// </summary>
+    public static async Task<int> RunAsync(TextWriter stderr, HostApplicationBuilder builder, Func<IHost, Task> run)
+    {
+        ArgumentNullException.ThrowIfNull(stderr);
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(run);
+
         ConfigurationResult result = GuildsmithOptionsReader.Read(name => builder.Configuration[name]);
         if (result.Options is null)
         {
-            await stderr.WriteAsync(FormatErrors(result.Errors));
+            await stderr.WriteAsync(FormatRefusal(result.Errors, builder.Configuration[GuildsmithOptionsReader.TokenVariable]));
             return InvalidConfigurationExitCode;
         }
 
-        ConfigureServices(builder, result.Options);
-        using IHost host = builder.Build();
-        await host.RunAsync();
+        ConfigureServices(builder, result.Options, stderr);
+        TokenRedactor redactor = new(result.Options.DiscordToken);
+        try
+        {
+            using IHost host = builder.Build();
+            await run(host);
+        }
+        catch (Exception exception)
+        {
+            // Without this catch the runtime prints the unhandled exception, unredacted, to stderr.
+            await stderr.WriteAsync(
+                "Guildsmith: the server stopped on an unexpected error.\n" + redactor.RedactException(exception) + "\n");
+            return HostFailureExitCode;
+        }
+
         return 0;
     }
 
@@ -64,12 +94,17 @@ public static class ServerStartup
         configuration.AddEnvironmentVariables();
     }
 
-    /// <summary>Registers the validated options, stderr-only logging and the MCP server with no tools.</summary>
-    public static void ConfigureServices(HostApplicationBuilder builder, GuildsmithOptions options)
+    /// <summary>
+    /// Registers the validated options, logging to <paramref name="stderr"/> through the
+    /// redacting provider only, and the MCP server with no tools.
+    /// </summary>
+    public static void ConfigureServices(HostApplicationBuilder builder, GuildsmithOptions options, TextWriter stderr)
     {
         builder.Services.AddSingleton(options);
 
-        builder.Logging.AddConsole(console => console.LogToStandardErrorThreshold = LogLevel.Trace);
+        // The one provider: every line, from this code and from the MCP SDK alike, is redacted
+        // before it is written. A second provider added here would print the token unredacted.
+        builder.Logging.AddProvider(new RedactingLoggerProvider(new TokenRedactor(options.DiscordToken), stderr));
         builder.Logging.SetMinimumLevel(options.LogLevel);
 
         // An empty tool collection, not none: without one the server does not advertise the
@@ -77,6 +112,16 @@ public static class ServerStartup
         builder.Services
             .AddMcpServer(server => server.ToolCollection = [])
             .WithStdioServerTransport();
+    }
+
+    /// <summary>
+    /// <see cref="FormatErrors"/> redacted for <paramref name="token"/>, the raw <c>DISCORD_TOKEN</c>
+    /// value, when one was read; unchanged when it is missing or blank.
+    /// </summary>
+    public static string FormatRefusal(IReadOnlyList<ConfigurationError> errors, string? token)
+    {
+        string text = FormatErrors(errors);
+        return string.IsNullOrWhiteSpace(token) ? text : new TokenRedactor(token).Redact(text);
     }
 
     /// <summary>The stderr text for a refused startup: one line per rejected variable.</summary>

@@ -1,6 +1,9 @@
 namespace Guildsmith.Core.Errors;
 
-/// <summary>The error codes of the unified error response (spec section 8).</summary>
+/// <summary>
+/// The error codes of the unified error response: the eight of spec section 8, plus
+/// <see cref="InternalError"/> for an unexpected failure (issue #3).
+/// </summary>
 public enum ErrorCode
 {
     ForbiddenGuild,
@@ -11,6 +14,7 @@ public enum ErrorCode
     RoleHierarchy,
     RateLimited,
     InvalidArgument,
+    InternalError,
 }
 
 /// <summary>The wire strings of <see cref="ErrorCode"/>: the only place they are spelled.</summary>
@@ -27,6 +31,7 @@ public static class ErrorCodeExtensions
         ErrorCode.RoleHierarchy => "role_hierarchy",
         ErrorCode.RateLimited => "rate_limited",
         ErrorCode.InvalidArgument => "invalid_argument",
+        ErrorCode.InternalError => "internal_error",
         _ => throw new ArgumentOutOfRangeException(nameof(code), code, "Not a defined error code."),
     };
 }

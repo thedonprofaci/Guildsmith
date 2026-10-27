@@ -35,6 +35,12 @@ public sealed class GuildsmithOptionsReaderTests
 
     // ---- DISCORD_TOKEN ----
 
+    [Fact]
+    public void TokenVariable_is_the_name_the_token_is_read_from()
+    {
+        Assert.Equal("DISCORD_TOKEN", GuildsmithOptionsReader.TokenVariable);
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]

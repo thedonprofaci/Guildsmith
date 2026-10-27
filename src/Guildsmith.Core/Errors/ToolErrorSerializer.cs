@@ -6,7 +6,8 @@ namespace Guildsmith.Core.Errors;
 
 /// <summary>
 /// Writes a <see cref="ToolError"/> as <c>{ "error": "&lt;code&gt;", "message": "&lt;text&gt;" }</c>
-/// (spec section 8), plus <c>valid_values</c> and <c>retry_after</c> only when the error carries them.
+/// (spec section 8), plus <c>valid_values</c>, <c>retry_after</c> and <c>correlation_id</c> only when
+/// the error carries them.
 /// </summary>
 public static class ToolErrorSerializer
 {
@@ -36,6 +37,11 @@ public static class ToolErrorSerializer
             if (error.RetryAfterSeconds is double retryAfter)
             {
                 writer.WriteNumber("retry_after", retryAfter);
+            }
+
+            if (error.CorrelationId is string correlationId)
+            {
+                writer.WriteString("correlation_id", correlationId);
             }
 
             writer.WriteEndObject();
