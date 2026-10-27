@@ -225,6 +225,18 @@ public sealed class FloorCheckTests : IDisposable
     }
 
     [Fact]
+    public void Run_passes_above_the_floor_and_names_each_count_in_its_own_slot()
+    {
+        // Tester, PR #16: every other passing case has executed == floor, so a check failing on
+        // executed != floor, or a pass line printing the two numbers swapped, stayed green.
+        (int exitCode, string stdout, string stderr) = RunWith("100\n", Trx(RealCounters));
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal("test-count floor: executed 124, floor 100" + Environment.NewLine, stdout);
+        Assert.Equal("", stderr);
+    }
+
+    [Fact]
     public void Run_fails_with_one_line_when_the_trx_is_missing()
     {
         (int exitCode, string stdout, string stderr) = RunWith("124\n", trxContent: null);
