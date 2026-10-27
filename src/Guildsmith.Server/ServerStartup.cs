@@ -94,10 +94,6 @@ public static class ServerStartup
         configuration.AddEnvironmentVariables();
     }
 
-    /// <summary><see cref="ConfigureServices(HostApplicationBuilder, GuildsmithOptions, TextWriter)"/> logging to <see cref="Console.Error"/>.</summary>
-    public static void ConfigureServices(HostApplicationBuilder builder, GuildsmithOptions options) =>
-        ConfigureServices(builder, options, Console.Error);
-
     /// <summary>
     /// Registers the validated options, logging to <paramref name="stderr"/> through the
     /// redacting provider only, and the MCP server with no tools.

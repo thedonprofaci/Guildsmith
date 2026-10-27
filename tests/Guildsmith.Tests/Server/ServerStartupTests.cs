@@ -172,7 +172,7 @@ public sealed class ServerStartupTests
     {
         HostApplicationBuilder builder = Host.CreateEmptyApplicationBuilder(new HostApplicationBuilderSettings());
 
-        ServerStartup.ConfigureServices(builder, Options(LogLevel.Information));
+        ServerStartup.ConfigureServices(builder, Options(LogLevel.Information), TextWriter.Null);
 
         // Startup must not construct or log in a Discord client (no network at startup).
         Assert.DoesNotContain(builder.Services, descriptor =>
@@ -302,12 +302,7 @@ public sealed class ServerStartupTests
         LogLevel = level,
     };
 
-    private static IHost BuildHost(GuildsmithOptions options)
-    {
-        HostApplicationBuilder builder = Host.CreateEmptyApplicationBuilder(new HostApplicationBuilderSettings());
-        ServerStartup.ConfigureServices(builder, options);
-        return builder.Build();
-    }
+    private static IHost BuildHost(GuildsmithOptions options) => BuildHost(options, TextWriter.Null);
 
     private static IHost BuildHost(GuildsmithOptions options, TextWriter stderr)
     {
