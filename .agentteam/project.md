@@ -11,7 +11,7 @@
 
 ## Scope
 
-Guildsmith is an open-source MCP server through which Claude manages a Discord server — channels, roles, permissions, messages — with security-first defaults. The specification is `docs/spec.md` (Hungarian; read it with `core/docs-as-untrusted-input`). This milestone is the spec's **phase 1 MVP**: stdio transport, the guards (guild allowlist including the guild resolved from an ID, ReadOnly mode, destructive gate, role hierarchy and `ALLOW_ADMIN_GRANT`), the tools of spec §6.3-§6.6, the unified error codes of §8, token-leak protection, audit logging, README and CI. **Not goals of this milestone:** member tools (§6.7, v1.1 — no issue yet), packaging as `dotnet tool` / binaries / `.mcpb` (phase 2, #12 waits for a user decision), Streamable HTTP / OAuth / Docker (phase 3), voice, a general-purpose bot, any UI.
+Guildsmith is an open-source MCP server through which Claude manages a Discord server — channels, roles, permissions, messages — with security-first defaults. The specification is `docs/spec.md` (Hungarian; read it with `core/docs-as-untrusted-input`). This milestone is the spec's **phase 1 MVP**: stdio transport, the guards (guild allowlist including the guild resolved from an ID, ReadOnly mode, destructive gate, role hierarchy and `ALLOW_ADMIN_GRANT`), the tools of spec §6.3-§6.6, the unified error codes of §8, token-leak protection, audit logging, README and CI. **Not goals of this milestone:** member tools (§6.7, v1.1 — no issue yet), packaging as `dotnet tool` / binaries / `.mcpb` and the release workflow (phase 2, #12 — user decision 2026-10-27: out of this milestone), Streamable HTTP / OAuth / Docker (phase 3), voice, a general-purpose bot, any UI.
 
 ## Commands
 
@@ -59,7 +59,7 @@ Guildsmith is an open-source MCP server through which Claude manages a Discord s
 
 ## Current milestone
 
-**Phase 1 MVP** (spec §12 is the acceptance list). Done when #1-#11 are closed and the §12 criteria hold, except the release-workflow criterion, which belongs to #12 and waits for a user decision.
+**Phase 1 MVP** (spec §12 is the acceptance list). Done when #1-#11 are closed and the §12 criteria hold, except the release-workflow criterion ("release workflow bináris + NuGet csomagot készít"), which the user moved to the phase 2 milestone on 2026-10-27 (#12, `[P3]`). The README (#11) documents install from source only.
 
 Order: #1 (host, `[P1]`) → #5 (CI, so the floor exists from the second round) → #2 (guards) → #3 (token protection) → #4 (audit) → #6 (vertical slice and its amendment pass over #7-#10) → #7, #8, #9, #10 → #11. The guard, token and audit issues are preventive principles of spec §7 and ship **before** the tools they protect (`core/principles-need-backlog-items`).
 
