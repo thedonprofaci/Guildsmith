@@ -3,24 +3,39 @@ using Guildsmith.Core.Configuration;
 using Guildsmith.Core.Errors;
 using Guildsmith.Core.Gateway;
 
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+
 namespace Guildsmith.Core.Guards;
 
 /// <summary>
 /// The server-side defence every tool call passes before it reaches Discord (spec sections 7.2
 /// and 7.3): the guild allowlist, then ReadOnly mode, then the destructive gate. The pipeline
-/// holds the gateway, and hands it to the operation only after every guard has passed.
+/// holds the gateway, and hands it to the operation only after every guard has passed. It is also
+/// the exception boundary of every tool call (spec section 7.1): an unexpected failure reaches the
+/// model as <c>internal_error</c> with a correlation id, and its detail reaches the log only.
 /// </summary>
 public sealed class GuardPipeline
 {
     private readonly GuildsmithOptions _options;
     private readonly IDiscordGateway _gateway;
+    private readonly ILogger _logger;
 
+    /// <summary>A pipeline that logs nothing; an unexpected failure is still returned as <c>internal_error</c>.</summary>
     public GuardPipeline(GuildsmithOptions options, IDiscordGateway gateway)
+        : this(options, gateway, NullLogger<GuardPipeline>.Instance)
+    {
+    }
+
+    /// <summary>A pipeline that logs the detail of an unexpected failure to <paramref name="logger"/>.</summary>
+    public GuardPipeline(GuildsmithOptions options, IDiscordGateway gateway, ILogger<GuardPipeline> logger)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(gateway);
+        ArgumentNullException.ThrowIfNull(logger);
         _options = options;
         _gateway = gateway;
+        _logger = logger;
     }
 
     /// <summary>
@@ -28,6 +43,9 @@ public sealed class GuardPipeline
     /// refusal otherwise, in which case the operation is never invoked. A call addressed by
     /// <c>guild_id</c> makes no gateway call before the operation; a call addressed by a channel,
     /// role or message ID makes exactly one, to resolve the guild that ID belongs to.
+    /// An exception the gateway or the operation throws is logged at <see cref="LogLevel.Error"/> and
+    /// returned as <see cref="ErrorCode.InternalError"/>; only an <see cref="OperationCanceledException"/>
+    /// thrown while <paramref name="cancellationToken"/> is cancelled propagates.
     /// </summary>
     public async Task<ToolResult<T>> RunAsync<T>(
         ToolLevel level,
@@ -38,6 +56,26 @@ public sealed class GuardPipeline
         ArgumentNullException.ThrowIfNull(target);
         ArgumentNullException.ThrowIfNull(operation);
 
+        try
+        {
+            return await GuardAndRunAsync(level, target, operation, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (!(exception is OperationCanceledException && cancellationToken.IsCancellationRequested))
+        {
+            // The exception's message can carry anything the gateway saw, the token included, so
+            // the model gets a fixed text and an id; the detail goes to the log, which redacts it.
+            string correlationId = Guid.NewGuid().ToString("N");
+            _logger.LogError(exception, "A tool call failed with an unexpected error, correlation_id {CorrelationId}.", correlationId);
+            return ToolResult<T>.Failure(ToolError.Internal(correlationId));
+        }
+    }
+
+    private async Task<ToolResult<T>> GuardAndRunAsync<T>(
+        ToolLevel level,
+        ToolTarget target,
+        Func<IDiscordGateway, GuardedTarget, CancellationToken, Task<T>> operation,
+        CancellationToken cancellationToken)
+    {
         Resolution resolution = await ResolveAsync(target, cancellationToken).ConfigureAwait(false);
         if (resolution.Error is not null)
         {
@@ -45,7 +83,9 @@ public sealed class GuardPipeline
         }
 
         GuardedTarget guarded = resolution.Target!;
-        ToolError? refusal = GuildAllowlistGuard.Check(guarded.GuildId, _options.AllowedGuildIds)
+        ToolError? refusal = (target.Kind == ToolTargetKind.Guild
+                ? GuildAllowlistGuard.Check(guarded.GuildId, _options.AllowedGuildIds)
+                : GuildAllowlistGuard.CheckResolved(guarded.GuildId, _options.AllowedGuildIds))
             ?? CheckSuppliedGuild(guarded.GuildId, resolution.SuppliedGuildId)
             ?? ReadOnlyModeGuard.Check(level, _options.Mode)
             ?? DestructiveGate.Check(level, _options.AllowDestructive);

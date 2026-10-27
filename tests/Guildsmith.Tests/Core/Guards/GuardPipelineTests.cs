@@ -2,7 +2,11 @@ using Guildsmith.Core.Configuration;
 using Guildsmith.Core.Errors;
 using Guildsmith.Core.Gateway;
 using Guildsmith.Core.Guards;
+using Guildsmith.Core.Security;
+using Guildsmith.Server;
 
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 using NSubstitute;
@@ -23,6 +27,8 @@ public sealed class GuardPipelineTests
     private const ulong RoleInForeign = 6009;
     private const ulong UnknownRole = 6404;
     private const ulong MessageId = 7001;
+
+    private const string LogToken = "FAKE-TOKEN-guildsmith-test-0003";
 
     private static readonly HashSet<ulong> BothGuilds = [GuildA, GuildB];
 
@@ -382,11 +388,212 @@ public sealed class GuardPipelineTests
         Assert.Empty(_gateway.ReceivedCalls());
     }
 
+    // ---- forbidden_guild does not name a guild the server resolved ----
+
+    [Fact]
+    public async Task RunAsync_does_not_name_the_guild_resolved_from_a_channel_id_in_the_refusal()
+    {
+        ToolResult<string> result = await Run(Options(BothGuilds, DiscordMcpMode.ReadWrite, false), ToolLevel.Read, ToolTarget.Channel("5009"));
+
+        AssertRefused(result, ErrorCode.ForbiddenGuild);
+        Assert.DoesNotContain("999", ToolErrorSerializer.Serialize(result.Error!), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RunAsync_does_not_name_the_guild_resolved_from_a_role_id_in_the_refusal()
+    {
+        ToolResult<string> result = await Run(Options(BothGuilds, DiscordMcpMode.ReadWrite, false), ToolLevel.Read, ToolTarget.Role("6009"));
+
+        AssertRefused(result, ErrorCode.ForbiddenGuild);
+        Assert.DoesNotContain("999", ToolErrorSerializer.Serialize(result.Error!), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RunAsync_does_not_name_the_guild_resolved_from_a_message_in_the_refusal()
+    {
+        ToolResult<string> result = await Run(Options(BothGuilds, DiscordMcpMode.ReadWrite, false), ToolLevel.Read, ToolTarget.Message("5009", "7001"));
+
+        AssertRefused(result, ErrorCode.ForbiddenGuild);
+        Assert.DoesNotContain("999", ToolErrorSerializer.Serialize(result.Error!), StringComparison.Ordinal);
+    }
+
+    // ---- the exception boundary: internal_error, a correlation id, a redacted log ----
+
+    [Fact]
+    public void Constructor_rejects_a_null_logger()
+    {
+        Assert.Throws<ArgumentNullException>(
+            () => new GuardPipeline(Options(BothGuilds, DiscordMcpMode.ReadWrite, false), _gateway, null!));
+    }
+
+    [Fact]
+    public async Task RunAsync_returns_internal_error_and_logs_the_exception_at_error_level_under_the_same_correlation_id()
+    {
+        StringWriter log = new();
+
+        ToolResult<string> result = await RunLogged(log, ToolTarget.Guild("111"),
+            (_, _, _) => throw new InvalidOperationException("operation-marker"));
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(ErrorCode.InternalError, result.Error.Code);
+        string correlationId = Assert.IsType<string>(result.Error.CorrelationId);
+        Assert.Matches("^[0-9a-f]{32}$", correlationId);
+
+        string text = log.ToString();
+        Assert.StartsWith("Error: ", text, StringComparison.Ordinal);
+        Assert.Contains(correlationId, text, StringComparison.Ordinal);
+        Assert.Contains("operation-marker", text, StringComparison.Ordinal);
+
+        // The model reads the fixed text, never the exception's own message.
+        Assert.DoesNotContain("operation-marker", ToolErrorSerializer.Serialize(result.Error), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RunAsync_gives_each_internal_error_its_own_correlation_id()
+    {
+        StringWriter log = new();
+        Func<IDiscordGateway, GuardedTarget, CancellationToken, Task<string>> fail = (_, _, _) => throw new InvalidOperationException("x");
+
+        ToolResult<string> first = await RunLogged(log, ToolTarget.Guild("111"), fail);
+        ToolResult<string> second = await RunLogged(log, ToolTarget.Guild("111"), fail);
+
+        Assert.NotEqual(first.Error!.CorrelationId, second.Error!.CorrelationId);
+    }
+
+    [Fact]
+    public async Task RunAsync_keeps_the_token_out_of_the_response_and_the_log_when_the_operation_throws_it()
+    {
+        StringWriter log = new();
+
+        ToolResult<string> result = await RunLogged(log, ToolTarget.Guild("111"),
+            (_, _, _) => throw new InvalidOperationException($"outer-marker {LogToken}"));
+
+        AssertInternalErrorWithoutToken(result, log, "outer-marker");
+    }
+
+    [Fact]
+    public async Task RunAsync_keeps_the_token_out_of_the_response_and_the_log_when_only_the_inner_exception_holds_it()
+    {
+        StringWriter log = new();
+
+        ToolResult<string> result = await RunLogged(log, ToolTarget.Guild("111"),
+            (_, _, _) => throw new InvalidOperationException("outer", new HttpRequestException($"inner-marker {LogToken}")));
+
+        AssertInternalErrorWithoutToken(result, log, "inner-marker");
+    }
+
+    [Fact]
+    public async Task RunAsync_keeps_the_token_out_of_the_response_and_the_log_when_the_message_holds_an_authorization_header()
+    {
+        StringWriter log = new();
+
+        ToolResult<string> result = await RunLogged(log, ToolTarget.Guild("111"),
+            (_, _, _) => throw new HttpRequestException($"header-marker Authorization: Bot {LogToken}"));
+
+        AssertInternalErrorWithoutToken(result, log, "header-marker");
+    }
+
+    [Fact]
+    public async Task RunAsync_returns_internal_error_without_the_token_when_the_channel_resolution_throws_it()
+    {
+        StringWriter log = new();
+        _gateway.GetChannelGuildIdAsync(ChannelInA, Arg.Any<CancellationToken>())
+            .Returns<Task<ulong?>>(_ => throw new HttpRequestException($"gateway-marker {LogToken}"));
+
+        ToolResult<string> result = await RunLogged(log, ToolTarget.Channel("5001"), Operation);
+
+        AssertInternalErrorWithoutToken(result, log, "gateway-marker");
+        Assert.False(_invoked);
+    }
+
+    [Fact]
+    public async Task RunAsync_returns_internal_error_without_the_token_when_the_role_resolution_throws_it()
+    {
+        StringWriter log = new();
+        _gateway.GetRoleGuildIdAsync(RoleInB, Arg.Any<CancellationToken>())
+            .Returns<Task<ulong?>>(_ => throw new HttpRequestException($"gateway-marker {LogToken}"));
+
+        ToolResult<string> result = await RunLogged(log, ToolTarget.Role("6002"), Operation);
+
+        AssertInternalErrorWithoutToken(result, log, "gateway-marker");
+        Assert.False(_invoked);
+    }
+
+    [Fact]
+    public async Task RunAsync_lets_a_cancellation_of_the_callers_token_propagate()
+    {
+        StringWriter log = new();
+        using CancellationTokenSource cancel = new();
+        cancel.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => RunLogged(log, ToolTarget.Guild("111"),
+            (_, _, token) => throw new OperationCanceledException(token), cancel.Token));
+
+        Assert.Equal("", log.ToString());
+    }
+
+    [Fact]
+    public async Task RunAsync_returns_internal_error_for_a_cancellation_the_callers_token_did_not_request()
+    {
+        StringWriter log = new();
+
+        ToolResult<string> result = await RunLogged(log, ToolTarget.Guild("111"),
+            (_, _, _) => throw new TaskCanceledException("timeout-marker"));
+
+        Assert.Equal(ErrorCode.InternalError, result.Error!.Code);
+        Assert.Contains("timeout-marker", log.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RunAsync_returns_internal_error_for_a_non_cancellation_exception_after_the_callers_token_was_cancelled()
+    {
+        StringWriter log = new();
+        using CancellationTokenSource cancel = new();
+        cancel.Cancel();
+
+        ToolResult<string> result = await RunLogged(log, ToolTarget.Guild("111"),
+            (_, _, _) => throw new InvalidOperationException("late-marker"), cancel.Token);
+
+        Assert.Equal(ErrorCode.InternalError, result.Error!.Code);
+        Assert.Contains("late-marker", log.ToString(), StringComparison.Ordinal);
+    }
+
     // ---- helpers ----
 
-    private static GuildsmithOptions Options(IReadOnlySet<ulong> allowedGuildIds, DiscordMcpMode mode, bool allowDestructive) => new()
+    // The real logging pipeline ServerStartup.ConfigureServices builds, writing to log.
+    private async Task<ToolResult<string>> RunLogged(
+        StringWriter log,
+        ToolTarget target,
+        Func<IDiscordGateway, GuardedTarget, CancellationToken, Task<string>> operation,
+        CancellationToken cancellationToken = default)
     {
-        DiscordToken = "FAKE-TOKEN-guildsmith-test-0002",
+        GuildsmithOptions options = Options(BothGuilds, DiscordMcpMode.ReadWrite, false, LogToken);
+        HostApplicationBuilder builder = Host.CreateEmptyApplicationBuilder(new HostApplicationBuilderSettings());
+        ServerStartup.ConfigureServices(builder, options, log);
+        using IHost host = builder.Build();
+
+        GuardPipeline pipeline = new(options, _gateway, host.Services.GetRequiredService<ILogger<GuardPipeline>>());
+        return await pipeline.RunAsync(ToolLevel.Read, target, operation, cancellationToken);
+    }
+
+    private static void AssertInternalErrorWithoutToken(ToolResult<string> result, StringWriter log, string markerWord)
+    {
+        Assert.False(result.IsSuccess);
+        Assert.Equal(ErrorCode.InternalError, result.Error.Code);
+        Assert.DoesNotContain(LogToken, ToolErrorSerializer.Serialize(result.Error), StringComparison.Ordinal);
+
+        string text = log.ToString();
+        Assert.Contains(markerWord, text, StringComparison.Ordinal);
+        Assert.Contains(TokenRedactor.Marker, text, StringComparison.Ordinal);
+        Assert.DoesNotContain(LogToken, text, StringComparison.Ordinal);
+    }
+
+    private static GuildsmithOptions Options(IReadOnlySet<ulong> allowedGuildIds, DiscordMcpMode mode, bool allowDestructive) =>
+        Options(allowedGuildIds, mode, allowDestructive, "FAKE-TOKEN-guildsmith-test-0002");
+
+    private static GuildsmithOptions Options(IReadOnlySet<ulong> allowedGuildIds, DiscordMcpMode mode, bool allowDestructive, string token) => new()
+    {
+        DiscordToken = token,
         AllowedGuildIds = allowedGuildIds,
         Mode = mode,
         AllowDestructive = allowDestructive,
