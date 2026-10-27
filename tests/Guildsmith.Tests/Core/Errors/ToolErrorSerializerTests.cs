@@ -70,6 +70,19 @@ public sealed class ToolErrorSerializerTests
     }
 
     [Fact]
+    public void Serialize_writes_internal_error_as_exactly_error_message_and_correlation_id()
+    {
+        using JsonDocument json = Parse(ToolError.Internal("9b2d4e71c0a84f6e"));
+
+        Assert.Equal(["correlation_id", "error", "message"], PropertyNames(json));
+        Assert.Equal("internal_error", json.RootElement.GetProperty("error").GetString());
+        Assert.Equal(ToolError.InternalErrorMessage, json.RootElement.GetProperty("message").GetString());
+        JsonElement correlationId = json.RootElement.GetProperty("correlation_id");
+        Assert.Equal(JsonValueKind.String, correlationId.ValueKind);
+        Assert.Equal("9b2d4e71c0a84f6e", correlationId.GetString());
+    }
+
+    [Fact]
     public void Serialize_rejects_a_null_error()
     {
         Assert.Throws<ArgumentNullException>(() => ToolErrorSerializer.Serialize(null!));

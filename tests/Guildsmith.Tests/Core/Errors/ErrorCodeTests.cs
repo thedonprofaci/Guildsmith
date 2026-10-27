@@ -4,7 +4,8 @@ namespace Guildsmith.Tests.Core.Errors;
 
 public sealed class ErrorCodeTests
 {
-    // The eight codes of spec section 8, typed in here rather than read from ErrorCode.
+    // The eight codes of spec section 8 plus internal_error (issue #3), typed in here rather
+    // than read from ErrorCode.
     private static readonly string[] SpecCodes =
     [
         "forbidden_guild",
@@ -15,10 +16,11 @@ public sealed class ErrorCodeTests
         "role_hierarchy",
         "rate_limited",
         "invalid_argument",
+        "internal_error",
     ];
 
     [Fact]
-    public void ToWireString_maps_the_members_one_to_one_onto_exactly_the_eight_spec_codes()
+    public void ToWireString_maps_the_members_one_to_one_onto_exactly_the_nine_codes()
     {
         ErrorCode[] members = Enum.GetValues<ErrorCode>();
         Dictionary<string, ErrorCode> byWire = members.ToDictionary(member => member.ToWireString());
@@ -40,6 +42,7 @@ public sealed class ErrorCodeTests
     [InlineData(ErrorCode.RoleHierarchy, "role_hierarchy")]
     [InlineData(ErrorCode.RateLimited, "rate_limited")]
     [InlineData(ErrorCode.InvalidArgument, "invalid_argument")]
+    [InlineData(ErrorCode.InternalError, "internal_error")]
     public void ToWireString_gives_each_member_its_spec_string(ErrorCode code, string expected)
     {
         Assert.Equal(expected, code.ToWireString());
@@ -48,6 +51,6 @@ public sealed class ErrorCodeTests
     [Fact]
     public void ToWireString_throws_on_an_undefined_code()
     {
-        Assert.Throws<ArgumentOutOfRangeException>(() => ((ErrorCode)8).ToWireString());
+        Assert.Throws<ArgumentOutOfRangeException>(() => ((ErrorCode)9).ToWireString());
     }
 }

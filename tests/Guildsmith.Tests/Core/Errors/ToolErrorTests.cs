@@ -71,4 +71,44 @@ public sealed class ToolErrorTests
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => ToolError.RateLimited("Slow down.", seconds));
     }
+
+    [Fact]
+    public void Constructor_carries_no_correlation_id()
+    {
+        Assert.Null(new ToolError(ErrorCode.NotFound, "Channel 5 was not found.").CorrelationId);
+    }
+
+    [Fact]
+    public void Constructor_rejects_internal_error_which_needs_a_correlation_id()
+    {
+        Assert.Throws<ArgumentException>(() => new ToolError(ErrorCode.InternalError, "Something broke."));
+    }
+
+    [Fact]
+    public void Internal_carries_the_code_the_correlation_id_and_the_fixed_message()
+    {
+        ToolError error = ToolError.Internal("4f1c0b9e");
+
+        Assert.Equal(ErrorCode.InternalError, error.Code);
+        Assert.Equal("4f1c0b9e", error.CorrelationId);
+        Assert.Equal(ToolError.InternalErrorMessage, error.Message);
+        Assert.Null(error.ValidValues);
+        Assert.Null(error.RetryAfterSeconds);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Internal_rejects_a_missing_or_blank_correlation_id(string? correlationId)
+    {
+        Assert.ThrowsAny<ArgumentException>(() => ToolError.Internal(correlationId!));
+    }
+
+    [Fact]
+    public void InvalidArgument_and_RateLimited_carry_no_correlation_id()
+    {
+        Assert.Null(ToolError.InvalidArgument("guild_id is required.", ["1"]).CorrelationId);
+        Assert.Null(ToolError.RateLimited("Slow down.", 1).CorrelationId);
+    }
 }
