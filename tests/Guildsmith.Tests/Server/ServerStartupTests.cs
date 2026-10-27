@@ -270,6 +270,27 @@ public sealed class ServerStartupTests
     }
 
     [Fact]
+    public async Task RunAsync_redacts_the_refusal_text_with_the_token_that_was_read()
+    {
+        // No reader message echoes a value, so the token is chosen to equal a variable name the
+        // refusal text prints: that is the only way the refused path can be shown to redact.
+        StringWriter stderr = new();
+        HostApplicationBuilder builder = Host.CreateEmptyApplicationBuilder(new HostApplicationBuilderSettings());
+        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["DISCORD_TOKEN"] = "ALLOW_DESTRUCTIVE",
+            ["ALLOWED_GUILD_IDS"] = "1",
+            ["ALLOW_DESTRUCTIVE"] = "maybe",
+        });
+
+        int exitCode = await ServerStartup.RunAsync(stderr, builder, static _ => Task.CompletedTask);
+
+        Assert.Equal(ServerStartup.InvalidConfigurationExitCode, exitCode);
+        Assert.Contains($"  {TokenRedactor.Marker}: ", stderr.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("ALLOW_DESTRUCTIVE", stderr.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task RunAsync_rejects_a_null_stderr_writer()
     {
         // An empty configuration is refused before the logger provider would reject the writer.
