@@ -530,6 +530,9 @@
           "Microsoft.Extensions.Hosting": "[10.0.13, )",
           "ModelContextProtocol": "[2.3.0, )"
         }
+      },
+      "guildsmith.testcountfloor": {
+        "type": "Project"
       }
     }
   }

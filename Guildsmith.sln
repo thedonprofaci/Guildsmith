@@ -13,6 +13,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Guildsmith.Server", "src\Gu
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Guildsmith.Tests", "tests\Guildsmith.Tests\Guildsmith.Tests.csproj", "{05BF46D7-37D4-4A60-AD06-1EB8798B64C4}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Guildsmith.TestCountFloor", "tests\Guildsmith.TestCountFloor\Guildsmith.TestCountFloor.csproj", "{CED6BBF9-B27E-4B2D-B4DE-5C61904027C1}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -71,6 +73,18 @@ Global
 		{05BF46D7-37D4-4A60-AD06-1EB8798B64C4}.Release|x64.Build.0 = Release|Any CPU
 		{05BF46D7-37D4-4A60-AD06-1EB8798B64C4}.Release|x86.ActiveCfg = Release|Any CPU
 		{05BF46D7-37D4-4A60-AD06-1EB8798B64C4}.Release|x86.Build.0 = Release|Any CPU
+		{CED6BBF9-B27E-4B2D-B4DE-5C61904027C1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CED6BBF9-B27E-4B2D-B4DE-5C61904027C1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CED6BBF9-B27E-4B2D-B4DE-5C61904027C1}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{CED6BBF9-B27E-4B2D-B4DE-5C61904027C1}.Debug|x64.Build.0 = Debug|Any CPU
+		{CED6BBF9-B27E-4B2D-B4DE-5C61904027C1}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{CED6BBF9-B27E-4B2D-B4DE-5C61904027C1}.Debug|x86.Build.0 = Debug|Any CPU
+		{CED6BBF9-B27E-4B2D-B4DE-5C61904027C1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CED6BBF9-B27E-4B2D-B4DE-5C61904027C1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CED6BBF9-B27E-4B2D-B4DE-5C61904027C1}.Release|x64.ActiveCfg = Release|Any CPU
+		{CED6BBF9-B27E-4B2D-B4DE-5C61904027C1}.Release|x64.Build.0 = Release|Any CPU
+		{CED6BBF9-B27E-4B2D-B4DE-5C61904027C1}.Release|x86.ActiveCfg = Release|Any CPU
+		{CED6BBF9-B27E-4B2D-B4DE-5C61904027C1}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -80,5 +94,6 @@ Global
 		{A31D619D-7C9D-4EFF-B808-68391447E4EE} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{B7B840DB-FFBA-431B-9A0F-BA733D74362D} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{05BF46D7-37D4-4A60-AD06-1EB8798B64C4} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{CED6BBF9-B27E-4B2D-B4DE-5C61904027C1} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 EndGlobal

@@ -177,6 +177,7 @@ public sealed class GuildsmithOptionsReaderTests
     [InlineData(" 5")]
     [InlineData("5 ")]
     [InlineData("99999999999")]
+    [InlineData("1,0")] // in range if read with a thousands separator (as 10), so only NumberStyles.None rejects it
     public void Read_rejects_a_non_numeric_message_limit(string value)
     {
         AssertOnlyError(Valid(("MAX_MESSAGES_PER_READ", value)), "MAX_MESSAGES_PER_READ", ConfigurationErrorKind.Invalid);
