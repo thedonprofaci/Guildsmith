@@ -42,7 +42,6 @@ public sealed class ToolError
     /// <summary>A <see cref="ErrorCode.RateLimited"/> error with the wait in seconds.</summary>
     public static ToolError RateLimited(string message, double retryAfterSeconds)
     {
-        // A NaN or infinite wait cannot be written as a JSON number.
         if (!double.IsFinite(retryAfterSeconds) || retryAfterSeconds < 0)
         {
             throw new ArgumentOutOfRangeException(nameof(retryAfterSeconds), retryAfterSeconds,
