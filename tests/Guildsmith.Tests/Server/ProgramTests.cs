@@ -132,4 +132,71 @@ public sealed class ProgramTests
         Assert.Contains("ALLOW_DESTRUCTIVE", stderr, StringComparison.Ordinal);
         Assert.DoesNotContain(ServerProcess.FakeToken, stderr, StringComparison.Ordinal);
     }
+
+    // Review tests (Tester, PR #13). The criterion "user secrets only when the host environment is
+    // Development" was held only by a source-list inspection of AddConfigurationSources; nothing
+    // ran the built server with DOTNET_ENVIRONMENT=Development, so RunAsync ignoring the variable
+    // entirely (environment always Production, secrets never read) left the suite green.
+    // APPDATA points the user-secrets lookup at a scratch directory, so the developer's real
+    // secrets are never read. ALLOW_DESTRUCTIVE=yes keeps both runs on the refusal path.
+
+    [Fact]
+    public async Task RunAsync_reads_user_secrets_when_the_environment_is_development()
+    {
+        string[] rejected = await RejectedVariablesWithSecretsFileAsync("Development");
+
+        // ALLOWED_GUILD_IDS came from secrets.json, so only the environment's bad flag is left.
+        Assert.Equal(["ALLOW_DESTRUCTIVE"], rejected);
+    }
+
+    [Fact]
+    public async Task RunAsync_ignores_user_secrets_outside_development()
+    {
+        string[] rejected = await RejectedVariablesWithSecretsFileAsync("Production");
+
+        Assert.Equal(["ALLOWED_GUILD_IDS", "ALLOW_DESTRUCTIVE"], rejected);
+    }
+
+    /// <summary>
+    /// Runs the built server with a secrets.json holding only <c>ALLOWED_GUILD_IDS</c>, the given
+    /// environment name, and an invalid <c>ALLOW_DESTRUCTIVE</c>; returns the variables named on stderr.
+    /// </summary>
+    private static async Task<string[]> RejectedVariablesWithSecretsFileAsync(string environmentName)
+    {
+        string appData = Path.Combine(Path.GetTempPath(), "guildsmith-review-" + Guid.NewGuid().ToString("N"));
+        string secretsId = typeof(Guildsmith.Server.ServerStartup).Assembly
+            .GetCustomAttributes(typeof(Microsoft.Extensions.Configuration.UserSecrets.UserSecretsIdAttribute), false)
+            .Cast<Microsoft.Extensions.Configuration.UserSecrets.UserSecretsIdAttribute>()
+            .Single().UserSecretsId;
+        string secretsDirectory = Path.Combine(appData, "Microsoft", "UserSecrets", secretsId);
+        Directory.CreateDirectory(secretsDirectory);
+        await File.WriteAllTextAsync(Path.Combine(secretsDirectory, "secrets.json"), "{ \"ALLOWED_GUILD_IDS\": \"123456789012345678\" }");
+        try
+        {
+            using CancellationTokenSource cancel = new(s_timeout);
+            Dictionary<string, string> settings = new()
+            {
+                ["DISCORD_TOKEN"] = ServerProcess.FakeToken,
+                ["ALLOW_DESTRUCTIVE"] = "yes",
+                ["DOTNET_ENVIRONMENT"] = environmentName,
+                ["APPDATA"] = appData,
+            };
+            using Process server = Process.Start(ServerProcess.StartInfo(settings))!;
+            server.StandardInput.Close();
+            Task<string> stdout = server.StandardOutput.ReadToEndAsync(cancel.Token);
+            string stderr = await server.StandardError.ReadToEndAsync(cancel.Token);
+            await server.WaitForExitAsync(cancel.Token);
+
+            Assert.Equal(1, server.ExitCode);
+            Assert.Equal(string.Empty, await stdout);
+            return stderr.Split('\n')
+                .Where(line => line.StartsWith("  ", StringComparison.Ordinal))
+                .Select(line => line.Trim().Split(':')[0])
+                .ToArray();
+        }
+        finally
+        {
+            Directory.Delete(appData, recursive: true);
+        }
+    }
 }
