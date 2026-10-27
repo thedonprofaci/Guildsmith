@@ -3,4 +3,9 @@
   <!-- Services, Guards, models, IDiscordGateway. References no Discord.Net and no MCP package:
        this layer is unit-testable with the gateway mocked (spec section 4). -->
 
+  <ItemGroup>
+    <!-- LogLevel for the LOG_LEVEL setting; pinned to the Extensions band the Server resolves. -->
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.13" />
+  </ItemGroup>
+
 </Project>
