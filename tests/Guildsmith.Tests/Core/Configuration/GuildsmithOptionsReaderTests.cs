@@ -46,6 +46,13 @@ public sealed class GuildsmithOptionsReaderTests
         AssertOnlyError(result, "DISCORD_TOKEN", ConfigurationErrorKind.Missing);
     }
 
+    [Fact]
+    public void Read_keeps_a_non_blank_token_verbatim_without_trimming()
+    {
+        // The token is passed through untouched: the reader does not repair a secret it cannot see.
+        Assert.Equal($"  {FakeToken}\n", Options(("DISCORD_TOKEN", $"  {FakeToken}\n")).DiscordToken);
+    }
+
     // ---- ALLOWED_GUILD_IDS ----
 
     [Theory]
@@ -69,6 +76,7 @@ public sealed class GuildsmithOptionsReaderTests
     [InlineData("+1")]
     [InlineData("1 2")]
     [InlineData("1;2")]
+    [InlineData("x,,y")]
     [InlineData("18446744073709551616")]
     public void Read_rejects_an_unparseable_guild_allowlist(string ids)
     {
