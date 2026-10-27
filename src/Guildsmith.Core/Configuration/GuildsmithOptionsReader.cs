@@ -12,7 +12,10 @@ namespace Guildsmith.Core.Configuration;
 /// </summary>
 public static class GuildsmithOptionsReader
 {
-    private const string DiscordToken = "DISCORD_TOKEN";
+    /// <summary>The variable that holds the bot token.</summary>
+    public const string TokenVariable = "DISCORD_TOKEN";
+
+    private const string DiscordToken = TokenVariable;
     private const string AllowedGuildIds = "ALLOWED_GUILD_IDS";
     private const string Mode = "DISCORD_MCP_MODE";
     private const string AllowDestructive = "ALLOW_DESTRUCTIVE";

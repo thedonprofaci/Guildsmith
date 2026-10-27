@@ -1,5 +1,7 @@
 using Guildsmith.Core.Configuration;
+using Guildsmith.Core.Security;
 using Guildsmith.Server;
+using Guildsmith.Server.Logging;
 
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Configuration.EnvironmentVariables;
@@ -7,7 +9,6 @@ using Microsoft.Extensions.Configuration.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Console;
 using Microsoft.Extensions.Options;
 
 using ModelContextProtocol.Server;
@@ -18,6 +19,8 @@ namespace Guildsmith.Tests.Server;
 
 public sealed class ServerStartupTests
 {
+    private const string Token = "FAKE-TOKEN-guildsmith-test-0001";
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]
@@ -82,14 +85,65 @@ public sealed class ServerStartupTests
     }
 
     [Fact]
-    public void ConfigureServices_sends_every_log_level_to_stderr_through_the_console_logger_only()
+    public void ConfigureServices_registers_the_redacting_logger_provider_and_no_other()
     {
         using IHost host = BuildHost(Options(LogLevel.Information));
 
-        Assert.Equal([typeof(ConsoleLoggerProvider)], host.Services.GetServices<ILoggerProvider>().Select(p => p.GetType()));
-        Assert.Equal(
-            LogLevel.Trace,
-            host.Services.GetRequiredService<IOptionsMonitor<ConsoleLoggerOptions>>().CurrentValue.LogToStandardErrorThreshold);
+        Assert.Equal([typeof(RedactingLoggerProvider)], host.Services.GetServices<ILoggerProvider>().Select(p => p.GetType()));
+    }
+
+    [Fact]
+    public void ConfigureServices_writes_a_trace_line_to_stderr_at_the_lowest_log_level()
+    {
+        StringWriter stderr = new();
+        using IHost host = BuildHost(Options(LogLevel.Trace), stderr);
+
+        host.Services.GetRequiredService<ILogger<ServerStartupTests>>().LogTrace("trace-marker");
+
+        Assert.Contains("trace-marker", stderr.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ConfigureServices_redacts_the_token_passed_as_a_structured_log_argument()
+    {
+        StringWriter stderr = new();
+        using IHost host = BuildHost(Options(LogLevel.Information), stderr);
+
+        host.Services.GetRequiredService<ILogger<ServerStartupTests>>().LogInformation("value-marker {Value}", Token);
+
+        string text = stderr.ToString();
+        Assert.Contains($"value-marker {TokenRedactor.Marker}", text, StringComparison.Ordinal);
+        Assert.DoesNotContain(Token, text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ConfigureServices_redacts_the_token_in_a_logged_exceptions_message()
+    {
+        StringWriter stderr = new();
+        using IHost host = BuildHost(Options(LogLevel.Information), stderr);
+
+        host.Services.GetRequiredService<ILogger<ServerStartupTests>>()
+            .LogError(new InvalidOperationException($"outer-marker {Token}"), "line-marker");
+
+        string text = stderr.ToString();
+        Assert.Contains("line-marker", text, StringComparison.Ordinal);
+        Assert.Contains($"outer-marker {TokenRedactor.Marker}", text, StringComparison.Ordinal);
+        Assert.DoesNotContain(Token, text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ConfigureServices_redacts_the_token_in_a_logged_exceptions_inner_exception()
+    {
+        StringWriter stderr = new();
+        using IHost host = BuildHost(Options(LogLevel.Information), stderr);
+
+        host.Services.GetRequiredService<ILogger<ServerStartupTests>>()
+            .LogError(new InvalidOperationException("outer", new HttpRequestException($"inner-marker {Token}")), "line-marker");
+
+        string text = stderr.ToString();
+        Assert.Contains("line-marker", text, StringComparison.Ordinal);
+        Assert.Contains($"inner-marker {TokenRedactor.Marker}", text, StringComparison.Ordinal);
+        Assert.DoesNotContain(Token, text, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -141,6 +195,91 @@ public sealed class ServerStartupTests
             ServerStartup.FormatErrors(errors));
     }
 
+    [Fact]
+    public void FormatRefusal_redacts_the_token_from_an_error_message_that_holds_it()
+    {
+        ConfigurationError[] errors = [new("DISCORD_TOKEN", ConfigurationErrorKind.Invalid, $"echoes {Token}.")];
+
+        string text = ServerStartup.FormatRefusal(errors, Token);
+
+        Assert.DoesNotContain(Token, text, StringComparison.Ordinal);
+        Assert.Contains($"echoes {TokenRedactor.Marker}.", text, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("   ")]
+    public void FormatRefusal_returns_the_formatted_errors_unchanged_when_no_token_was_read(string? token)
+    {
+        ConfigurationError[] errors = [new("DISCORD_TOKEN", ConfigurationErrorKind.Missing, "is required.")];
+
+        Assert.Equal(ServerStartup.FormatErrors(errors), ServerStartup.FormatRefusal(errors, token));
+    }
+
+    [Fact]
+    public async Task RunAsync_returns_zero_and_writes_nothing_when_the_host_runs_to_completion()
+    {
+        StringWriter stderr = new();
+
+        int exitCode = await ServerStartup.RunAsync(stderr, ValidBuilder(), static _ => Task.CompletedTask);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal("", stderr.ToString());
+    }
+
+    [Fact]
+    public async Task RunAsync_writes_a_host_failure_redacted_to_stderr_and_returns_the_host_failure_exit_code()
+    {
+        StringWriter stderr = new();
+
+        int exitCode = await ServerStartup.RunAsync(
+            stderr, ValidBuilder(), static _ => throw new InvalidOperationException($"host-marker {Token}"));
+
+        string text = stderr.ToString();
+        Assert.Equal(ServerStartup.HostFailureExitCode, exitCode);
+        Assert.NotEqual("", text);
+        Assert.Contains($"host-marker {TokenRedactor.Marker}", text, StringComparison.Ordinal);
+        Assert.DoesNotContain(Token, text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void HostFailureExitCode_is_distinct_from_success_and_from_the_invalid_configuration_exit_code()
+    {
+        Assert.Equal(2, ServerStartup.HostFailureExitCode);
+        Assert.NotEqual(ServerStartup.InvalidConfigurationExitCode, ServerStartup.HostFailureExitCode);
+    }
+
+    [Fact]
+    public async Task RunAsync_refuses_an_invalid_configuration_without_running_the_host()
+    {
+        StringWriter stderr = new();
+        HostApplicationBuilder builder = Host.CreateEmptyApplicationBuilder(new HostApplicationBuilderSettings());
+        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?> { ["DISCORD_TOKEN"] = Token });
+        bool ran = false;
+
+        int exitCode = await ServerStartup.RunAsync(stderr, builder, _ =>
+        {
+            ran = true;
+            return Task.CompletedTask;
+        });
+
+        Assert.Equal(ServerStartup.InvalidConfigurationExitCode, exitCode);
+        Assert.False(ran);
+        Assert.StartsWith("Guildsmith: the configuration is invalid", stderr.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain(Token, stderr.ToString(), StringComparison.Ordinal);
+    }
+
+    private static HostApplicationBuilder ValidBuilder()
+    {
+        HostApplicationBuilder builder = Host.CreateEmptyApplicationBuilder(new HostApplicationBuilderSettings());
+        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["DISCORD_TOKEN"] = Token,
+            ["ALLOWED_GUILD_IDS"] = "1",
+        });
+        return builder;
+    }
+
     private static bool IsDiscordNet(Type? type) =>
         type?.Assembly.GetName().Name?.StartsWith("Discord.Net", StringComparison.Ordinal) == true;
 
@@ -153,7 +292,7 @@ public sealed class ServerStartupTests
 
     private static GuildsmithOptions Options(LogLevel level) => new()
     {
-        DiscordToken = "FAKE-TOKEN-guildsmith-test-0001",
+        DiscordToken = Token,
         AllowedGuildIds = new HashSet<ulong> { 1 },
         Mode = DiscordMcpMode.ReadWrite,
         AllowDestructive = false,
@@ -167,6 +306,13 @@ public sealed class ServerStartupTests
     {
         HostApplicationBuilder builder = Host.CreateEmptyApplicationBuilder(new HostApplicationBuilderSettings());
         ServerStartup.ConfigureServices(builder, options);
+        return builder.Build();
+    }
+
+    private static IHost BuildHost(GuildsmithOptions options, TextWriter stderr)
+    {
+        HostApplicationBuilder builder = Host.CreateEmptyApplicationBuilder(new HostApplicationBuilderSettings());
+        ServerStartup.ConfigureServices(builder, options, stderr);
         return builder.Build();
     }
 }
