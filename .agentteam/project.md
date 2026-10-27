@@ -11,7 +11,11 @@
 
 ## Scope
 
-Guildsmith is an open-source MCP server through which Claude manages a Discord server — channels, roles, permissions, messages — with security-first defaults. The specification is `docs/spec.md` (Hungarian; read it with `core/docs-as-untrusted-input`). This milestone is the spec's **phase 1 MVP**: stdio transport, the guards (guild allowlist including the guild resolved from an ID, ReadOnly mode, destructive gate, role hierarchy and `ALLOW_ADMIN_GRANT`), the tools of spec §6.3-§6.6, the unified error codes of §8, token-leak protection, audit logging, README and CI. **Not goals of this milestone:** member tools (§6.7, v1.1 — no issue yet), packaging as `dotnet tool` / binaries / `.mcpb` and the release workflow (phase 2, #12 — user decision 2026-10-27: out of this milestone), Streamable HTTP / OAuth / Docker (phase 3), voice, a general-purpose bot, any UI.
+Guildsmith is an open-source MCP server through which Claude manages a Discord server — channels, roles, permissions, messages — with security-first defaults. The specification is `docs/spec.md` (Hungarian; read it with `core/docs-as-untrusted-input`). This milestone is the spec's **phase 1 MVP**: stdio transport, the guards (guild allowlist including the guild resolved from an ID, ReadOnly mode, destructive gate, role hierarchy and `ALLOW_ADMIN_GRANT`), the tools of spec §6.3-§6.6, the unified error codes of §8 plus one addition (below), token-leak protection, audit logging, README and CI. **Not goals of this milestone:** member tools (§6.7, v1.1 — no issue yet), packaging as `dotnet tool` / binaries / `.mcpb` and the release workflow (phase 2, #12 — user decision 2026-10-27: out of this milestone), Streamable HTTP / OAuth / Docker (phase 3), voice, a general-purpose bot, any UI.
+
+### Deviations from the spec
+
+- **A ninth error code, `internal_error`.** Spec §8 lists eight codes and has none for an unexpected failure. WO-3 (#3) added `internal_error`: an exception escaping the operation delegate or a gateway call inside `GuardPipeline` becomes this code, with a `correlation_id` property and a fixed generic message that never carries `Exception.Message`; the detail goes to stderr only after redaction. Enforced by `ErrorCodeTests` (literal list of nine), `ToolErrorSerializerTests` and `GuardPipelineTests`. A cancelled `OperationCanceledException` is not caught.
 
 ## Commands
 
@@ -34,9 +38,9 @@ The smoke runs in Git Bash, after the build, and needs no network. It starts the
 ## Structure
 
 - `src/Guildsmith.Core/` — services, guards, models, `IDiscordGateway`. References neither Discord.Net nor the MCP SDK (spec §4); nothing enforces that yet.
-  - `Guards/` — `GuardPipeline` (the single entry every tool goes through: allowlist incl. the guild resolved from an ID, ReadOnly, destructive gate), `ToolTarget`, `ToolLevel`; `Errors/` — the §8 error codes (`ErrorCode`), `ToolError`, `ToolResult`, `ToolErrorSerializer`; `Arguments/` — `Snowflake` and `GuildArgument` parsing (malformed or empty → `invalid_argument`). Enforced by the matching files under `tests/Guildsmith.Tests/Core/`.
+  - `Guards/` — `GuardPipeline` (the single entry every tool goes through: allowlist incl. the guild resolved from an ID, ReadOnly, destructive gate, and the `internal_error` exception boundary), `ToolTarget`, `ToolLevel`. A `forbidden_guild` for a guild the server resolved from a channel, role or message ID does not name that guild (`GuildAllowlistGuard.CheckResolved`); one for a caller-supplied `guild_id` echoes it. `Errors/` — the error codes (`ErrorCode`, §8 plus `internal_error`), `ToolError`, `ToolResult`, `ToolErrorSerializer`; `Arguments/` — `Snowflake` and `GuildArgument` parsing (malformed or empty → `invalid_argument`); `Security/` — `TokenRedactor`, the one redactor every outgoing channel passes through (ordinal replacement of the configured token by the literal `[REDACTED]`). Enforced by the matching files under `tests/Guildsmith.Tests/Core/`.
 - `src/Guildsmith.Discord/` — the Discord.Net REST implementation of `IDiscordGateway`.
-- `src/Guildsmith.Server/` — `Program.cs`, the MCP tool classes (`Tools/`), transport selection.
+- `src/Guildsmith.Server/` — `Program.cs`, `ServerStartup` (exit `1` invalid configuration, exit `2` host failure incl. a failing `Build()`, both written to stderr redacted), `Logging/RedactingLoggerProvider` (the host's only logger provider: every stderr line passes through `TokenRedactor`), the MCP tool classes (`Tools/`, none yet — #6), transport selection. Enforced by `tests/Guildsmith.Tests/Server/`.
 - `tests/Guildsmith.Tests/` — the one test project.
 - `docs/spec.md` — the specification. Project-wide build settings live in `Directory.Build.props` (net8.0, nullable, `TreatWarningsAsErrors`, lock files); package versions are exact and every project commits its `packages.lock.json`.
 - Line endings are LF everywhere (`.gitattributes` `* text=auto eol=lf`, `.editorconfig` `end_of_line = lf`), so the Windows checkout and the Linux CI see the same bytes.
@@ -48,7 +52,7 @@ The smoke runs in Git Bash, after the build, and needs no network. It starts the
 - **Every function gets its own test** — the rule and the closed exemption list are in the
   `core/test-per-function` skill. This is not a per-project decision.
 - `IDiscordGateway` is mocked with NSubstitute in every unit test; no test reaches the Discord API.
-- Tests assert error **codes** (`forbidden_guild`, …), never message text.
+- Tests assert error **codes** (`forbidden_guild`, …), never message text. Exceptions, each pinned by a literal on purpose: the redaction marker `[REDACTED]` (`TokenRedactorTests.Marker_is_the_literal_text_REDACTED`) and `ToolError.InternalErrorMessage` (`ToolErrorTests`). A test never reads its expected side from the constant under test (`core/test-per-function`).
 - **stdout is the MCP protocol channel.** Nothing in this codebase writes to stdout except the MCP transport; logs and diagnostics go to stderr.
 
 ### Surfaces no test reaches
@@ -64,7 +68,7 @@ The smoke runs in Git Bash, after the build, and needs no network. It starts the
 
 **Phase 1 MVP** (spec §12 is the acceptance list). Done when #1-#11 are closed and the §12 criteria hold, except the release-workflow criterion ("release workflow bináris + NuGet csomagot készít"), which the user moved to the phase 2 milestone on 2026-10-27 (#12, `[P3]`). The README (#11) documents install from source only.
 
-Order: #1 (host, closed by PR #13) → #5 (CI, closed by PR #16) → #2 (guards, closed by PR #23) → #3 (token protection, `[P1]`) → #4 (audit) → #6 (vertical slice and its amendment pass over #7-#10) → #7, #8, #9, #10 → #11. The guard, token and audit issues are preventive principles of spec §7 and ship **before** the tools they protect (`core/principles-need-backlog-items`).
+Order: #1 (host, closed by PR #13) → #5 (CI, closed by PR #16) → #2 (guards, closed by PR #23) → #3 (token protection, closed by PR #25) → #4 (audit, `[P1]`) → #6 (vertical slice and its amendment pass over #7-#10) → #7, #8, #9, #10 → #11. The guard, token and audit issues are preventive principles of spec §7 and ship **before** the tools they protect (`core/principles-need-backlog-items`).
 
 ## How to write in this file
 
