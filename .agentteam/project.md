@@ -22,12 +22,14 @@ Guildsmith is an open-source MCP server through which Claude manages a Discord s
 | Build | `dotnet build Guildsmith.sln --nologo -v q` |
 | Format check | `dotnet format Guildsmith.sln --verify-no-changes` |
 | Locked restore (what CI runs) | `dotnet restore Guildsmith.sln --locked-mode` |
-| Run (smoke) | **No such command yet.** `src/Guildsmith.Server/Program.cs` is a placeholder that writes one line to stderr and exits 1. #1 delivers the host; #6 makes the MCP Inspector listing (`npx @modelcontextprotocol/inspector` against the built server, fake token, no network) the run smoke. |
+| Run (smoke) | `printf '' | DOTNET_ENVIRONMENT=Production DISCORD_TOKEN=FAKE-TOKEN-smoke ALLOWED_GUILD_IDS=1 dotnet src/Guildsmith.Server/bin/Debug/net8.0/Guildsmith.Server.dll` |
+
+The smoke runs in Git Bash, after the build, and needs no network. It starts the host with stdin already closed. Expected result: exit `0` and **zero bytes on stdout**, because nothing was sent and stdout is protocol only. Logs go to stderr. Measured on `dbf9007`, 2026-10-27. The cell holds only the command so that `tools/context.py` can parse it. #6 adds the MCP Inspector listing (`npx @modelcontextprotocol/inspector`) as the second smoke.
 
 > These commands must work on a clean clone. If one only runs on a particular machine, that
 > is a lesson belonging in the `skills/dotnet-mcp/` branch.
 
-**`dotnet test` exits 0 when it discovers zero tests** — measured on this skeleton (SDK 9.0.318, 2026-10-27): no summary line, exit 0. The suite currently holds no test, so a green run proves nothing until a test exists, and nothing enforces a floor until #5 (open) adds one to CI. Read the `Passed!` line, not the exit code.
+**`dotnet test` exits 0 when it discovers zero tests** — measured on this skeleton (SDK 9.0.318, 2026-10-27): no summary line, exit 0. Nothing enforces a test-count floor until #5 (open) adds one to CI. Read the `Passed!` line, not the exit code.
 
 ## Structure
 
@@ -61,7 +63,7 @@ Guildsmith is an open-source MCP server through which Claude manages a Discord s
 
 **Phase 1 MVP** (spec §12 is the acceptance list). Done when #1-#11 are closed and the §12 criteria hold, except the release-workflow criterion ("release workflow bináris + NuGet csomagot készít"), which the user moved to the phase 2 milestone on 2026-10-27 (#12, `[P3]`). The README (#11) documents install from source only.
 
-Order: #1 (host, `[P1]`) → #5 (CI, so the floor exists from the second round) → #2 (guards) → #3 (token protection) → #4 (audit) → #6 (vertical slice and its amendment pass over #7-#10) → #7, #8, #9, #10 → #11. The guard, token and audit issues are preventive principles of spec §7 and ship **before** the tools they protect (`core/principles-need-backlog-items`).
+Order: #1 (host, closed by PR #13) → #5 (CI, `[P1]`) → #2 (guards) → #3 (token protection) → #4 (audit) → #6 (vertical slice and its amendment pass over #7-#10) → #7, #8, #9, #10 → #11. The guard, token and audit issues are preventive principles of spec §7 and ship **before** the tools they protect (`core/principles-need-backlog-items`).
 
 ## How to write in this file
 
