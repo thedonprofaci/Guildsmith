@@ -1,0 +1,5 @@
+# One line ending in the repository and in every working tree, so a Windows checkout
+# (core.autocrlf=true) and the Linux CI see the same bytes (core/normalise-line-endings-in-fixtures).
+* text=auto eol=lf
+*.png binary
+*.ico binary

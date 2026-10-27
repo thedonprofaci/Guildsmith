@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Services, Guards, models, IDiscordGateway. References no Discord.Net and no MCP package:
+       this layer is unit-testable with the gateway mocked (spec section 4). -->
+
+</Project>
