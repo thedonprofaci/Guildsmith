@@ -61,6 +61,15 @@ public sealed class ToolErrorSerializerTests
     }
 
     [Fact]
+    public void Serialize_writes_a_zero_retry_after_rather_than_dropping_it()
+    {
+        using JsonDocument json = Parse(ToolError.RateLimited("Slow down.", 0));
+
+        Assert.Equal(["error", "message", "retry_after"], PropertyNames(json));
+        Assert.Equal(0.0, json.RootElement.GetProperty("retry_after").GetDouble());
+    }
+
+    [Fact]
     public void Serialize_rejects_a_null_error()
     {
         Assert.Throws<ArgumentNullException>(() => ToolErrorSerializer.Serialize(null!));

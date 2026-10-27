@@ -36,7 +36,6 @@ public sealed class ToolError
     /// <summary>An <see cref="ErrorCode.InvalidArgument"/> error listing the values the argument accepts.</summary>
     public static ToolError InvalidArgument(string message, IEnumerable<string> validValues)
     {
-        ArgumentNullException.ThrowIfNull(validValues);
         return new ToolError(ErrorCode.InvalidArgument, message, validValues.ToArray(), null);
     }
 
