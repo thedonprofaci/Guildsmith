@@ -59,7 +59,15 @@ public sealed class ServerStartupTests
         // Order matters: the later source wins, so an environment variable overrides a secret.
         Assert.Collection(
             configuration.Sources,
-            secrets => Assert.Equal("secrets.json", Assert.IsType<JsonConfigurationSource>(secrets).Path),
+            secrets =>
+            {
+                JsonConfigurationSource json = Assert.IsType<JsonConfigurationSource>(secrets);
+                Assert.Equal("secrets.json", json.Path);
+
+                // Optional: a machine where `dotnet user-secrets` was never run has no file, and
+                // a required one crashes the Development host at startup.
+                Assert.True(json.Optional);
+            },
             variables => Assert.Null(Assert.IsType<EnvironmentVariablesConfigurationSource>(variables).Prefix));
     }
 

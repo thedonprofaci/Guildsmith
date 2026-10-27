@@ -160,6 +160,45 @@ public sealed class ProgramTests
         Assert.Equal(["ALLOWED_GUILD_IDS", "ALLOW_DESTRUCTIVE"], rejected);
     }
 
+    [Fact]
+    public async Task RunAsync_serves_and_exits_cleanly_in_development_without_a_user_secrets_file()
+    {
+        // A fresh APPDATA with no Microsoft/UserSecrets directory at all: the state of every
+        // machine on which `dotnet user-secrets set` was never run. With a required secrets
+        // file the host crashes with "The configuration file 'secrets.json' was not found and
+        // is not optional." before serving anything.
+        string appData = Path.Combine(Path.GetTempPath(), "guildsmith-nosecrets-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(appData);
+        try
+        {
+            using CancellationTokenSource cancel = new(s_timeout);
+            Dictionary<string, string> settings = new(s_validSettings)
+            {
+                ["DOTNET_ENVIRONMENT"] = "Development",
+                ["APPDATA"] = appData,
+            };
+            using Process server = Process.Start(ServerProcess.StartInfo(settings))!;
+            server.StandardInput.Close();
+            Task<string> stdout = server.StandardOutput.ReadToEndAsync(cancel.Token);
+            string stderr = await server.StandardError.ReadToEndAsync(cancel.Token);
+            await server.WaitForExitAsync(cancel.Token);
+
+            Assert.Equal(0, server.ExitCode);
+            Assert.Equal(string.Empty, await stdout);
+
+            // The host did start in Development, so the absences below are measured on the run
+            // that adds user secrets, not on a Production run that never looks for them.
+            Assert.Contains("Hosting environment: Development", stderr, StringComparison.Ordinal);
+            Assert.DoesNotContain("secrets.json", stderr, StringComparison.Ordinal);
+            Assert.DoesNotContain("Unhandled exception", stderr, StringComparison.Ordinal);
+            Assert.False(Directory.Exists(Path.Combine(appData, "Microsoft", "UserSecrets")));
+        }
+        finally
+        {
+            Directory.Delete(appData, recursive: true);
+        }
+    }
+
     /// <summary>
     /// Runs the built server with a secrets.json holding only <c>ALLOWED_GUILD_IDS</c>, the given
     /// environment name, and an invalid <c>ALLOW_DESTRUCTIVE</c>; returns the variables named on stderr.
