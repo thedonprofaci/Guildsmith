@@ -60,7 +60,7 @@ public sealed class RedactingLoggerProviderTests
 
         string text = _writer.ToString();
         Assert.DoesNotContain(Token, text, StringComparison.Ordinal);
-        Assert.Contains($"value {TokenRedactor.Marker}", text, StringComparison.Ordinal);
+        Assert.Contains("value [REDACTED]", text, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -72,7 +72,7 @@ public sealed class RedactingLoggerProviderTests
 
         string text = _writer.ToString();
         Assert.DoesNotContain(Token, text, StringComparison.Ordinal);
-        Assert.Contains($"inner-marker {TokenRedactor.Marker}", text, StringComparison.Ordinal);
+        Assert.Contains("inner-marker [REDACTED]", text, StringComparison.Ordinal);
     }
 
     [Fact]

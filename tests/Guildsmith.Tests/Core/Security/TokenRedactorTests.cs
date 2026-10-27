@@ -18,12 +18,20 @@ public sealed class TokenRedactorTests
     }
 
     [Fact]
+    public void Marker_is_the_literal_text_REDACTED()
+    {
+        // Every expected side in this suite once read TokenRedactor.Marker, so Marker = "" turned
+        // the redactor into a silent deleter with the whole suite green. The literal does not move.
+        Assert.Equal("[REDACTED]", TokenRedactor.Marker);
+    }
+
+    [Fact]
     public void Redact_replaces_the_bare_token()
     {
         string redacted = _redactor.Redact(Token);
 
         Assert.DoesNotContain(Token, redacted, StringComparison.Ordinal);
-        Assert.Equal(TokenRedactor.Marker, redacted);
+        Assert.Equal("[REDACTED]", redacted);
     }
 
     [Fact]
@@ -32,7 +40,7 @@ public sealed class TokenRedactorTests
         string redacted = _redactor.Redact($"Authorization: Bot {Token}");
 
         Assert.DoesNotContain(Token, redacted, StringComparison.Ordinal);
-        Assert.Equal($"Authorization: Bot {TokenRedactor.Marker}", redacted);
+        Assert.Equal("Authorization: Bot [REDACTED]", redacted);
     }
 
     [Fact]
@@ -41,7 +49,7 @@ public sealed class TokenRedactorTests
         string redacted = _redactor.Redact($"first {Token} second {Token}");
 
         Assert.DoesNotContain(Token, redacted, StringComparison.Ordinal);
-        Assert.Equal($"first {TokenRedactor.Marker} second {TokenRedactor.Marker}", redacted);
+        Assert.Equal("first [REDACTED] second [REDACTED]", redacted);
     }
 
     [Fact]
@@ -50,7 +58,7 @@ public sealed class TokenRedactorTests
         string redacted = _redactor.Redact($"{Token} was rejected");
 
         Assert.DoesNotContain(Token, redacted, StringComparison.Ordinal);
-        Assert.Equal($"{TokenRedactor.Marker} was rejected", redacted);
+        Assert.Equal("[REDACTED] was rejected", redacted);
     }
 
     [Fact]
@@ -59,7 +67,7 @@ public sealed class TokenRedactorTests
         string redacted = _redactor.Redact($"rejected: {Token}");
 
         Assert.DoesNotContain(Token, redacted, StringComparison.Ordinal);
-        Assert.Equal($"rejected: {TokenRedactor.Marker}", redacted);
+        Assert.Equal("rejected: [REDACTED]", redacted);
     }
 
     [Fact]
@@ -86,7 +94,7 @@ public sealed class TokenRedactorTests
         string redacted = redactor.Redact($"Authorization: Bot {Token}");
 
         Assert.DoesNotContain(Token, redacted, StringComparison.Ordinal);
-        Assert.Equal($"Authorization: Bot {TokenRedactor.Marker}", redacted);
+        Assert.Equal("Authorization: Bot [REDACTED]", redacted);
     }
 
     [Fact]
@@ -101,7 +109,7 @@ public sealed class TokenRedactorTests
         string redacted = _redactor.RedactException(new InvalidOperationException($"outer-marker {Token}"));
 
         Assert.DoesNotContain(Token, redacted, StringComparison.Ordinal);
-        Assert.Contains($"outer-marker {TokenRedactor.Marker}", redacted, StringComparison.Ordinal);
+        Assert.Contains("outer-marker [REDACTED]", redacted, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -112,7 +120,7 @@ public sealed class TokenRedactorTests
         string redacted = _redactor.RedactException(exception);
 
         Assert.DoesNotContain(Token, redacted, StringComparison.Ordinal);
-        Assert.Contains($"inner-marker {TokenRedactor.Marker}", redacted, StringComparison.Ordinal);
+        Assert.Contains("inner-marker [REDACTED]", redacted, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -125,7 +133,7 @@ public sealed class TokenRedactorTests
         string redacted = _redactor.RedactException(exception);
 
         Assert.DoesNotContain(Token, redacted, StringComparison.Ordinal);
-        Assert.Contains($"second-marker {TokenRedactor.Marker}", redacted, StringComparison.Ordinal);
+        Assert.Contains("second-marker [REDACTED]", redacted, StringComparison.Ordinal);
     }
 
     [Fact]

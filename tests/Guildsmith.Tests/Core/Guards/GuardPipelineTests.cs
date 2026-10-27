@@ -2,7 +2,6 @@ using Guildsmith.Core.Configuration;
 using Guildsmith.Core.Errors;
 using Guildsmith.Core.Gateway;
 using Guildsmith.Core.Guards;
-using Guildsmith.Core.Security;
 using Guildsmith.Server;
 
 using Microsoft.Extensions.DependencyInjection;
@@ -584,7 +583,7 @@ public sealed class GuardPipelineTests
 
         string text = log.ToString();
         Assert.Contains(markerWord, text, StringComparison.Ordinal);
-        Assert.Contains(TokenRedactor.Marker, text, StringComparison.Ordinal);
+        Assert.Contains("[REDACTED]", text, StringComparison.Ordinal);
         Assert.DoesNotContain(LogToken, text, StringComparison.Ordinal);
     }
 
