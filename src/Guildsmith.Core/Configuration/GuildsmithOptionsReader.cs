@@ -1,5 +1,7 @@
 using System.Globalization;
 
+using Guildsmith.Core.Arguments;
+
 using Microsoft.Extensions.Logging;
 
 namespace Guildsmith.Core.Configuration;
@@ -86,10 +88,9 @@ public static class GuildsmithOptionsReader
         HashSet<ulong> ids = [];
         for (int i = 0; i < entries.Length; i++)
         {
-            // NumberStyles.None: digits only, so a sign, a thousands separator or inner
-            // whitespace is a rejected entry rather than a different guild ID.
+            // The snowflake rule of a tool argument, applied after trimming the space around a comma.
             string entry = entries[i].Trim();
-            if (!ulong.TryParse(entry, NumberStyles.None, CultureInfo.InvariantCulture, out ulong id) || id == 0)
+            if (!Snowflake.TryParse(entry, out ulong id))
             {
                 errors.Add(new(AllowedGuildIds, ConfigurationErrorKind.Invalid,
                     $"entry {i + 1} of {entries.Length} is not a non-zero numeric guild ID."));
