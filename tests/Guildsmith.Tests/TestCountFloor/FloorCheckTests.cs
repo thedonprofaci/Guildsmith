@@ -67,6 +67,21 @@ public sealed class FloorCheckTests : IDisposable
         Assert.Throws<FloorCheckException>(() => FloorCheck.ReadFloor(Write("floor.txt", "+124\n")));
     }
 
+    // Leading whitespace is the half of "surrounding whitespace allowed" that a TrimEnd would
+    // drop: a floor file written with a leading space would then fail as unparseable.
+    [Fact]
+    public void ReadFloor_reads_the_integer_and_ignores_leading_whitespace()
+    {
+        Assert.Equal(124, FloorCheck.ReadFloor(Write("floor.txt", " 124")));
+    }
+
+    // Under AllowThousands "1,000" would read as a floor of 1000 instead of failing.
+    [Fact]
+    public void ReadFloor_rejects_a_thousands_separated_value()
+    {
+        Assert.Throws<FloorCheckException>(() => FloorCheck.ReadFloor(Write("floor.txt", "1,000\n")));
+    }
+
     [Fact]
     public void ReadFloor_rejects_zero_because_a_zero_floor_is_no_floor()
     {
@@ -166,6 +181,34 @@ public sealed class FloorCheckTests : IDisposable
     public void ReadExecuted_rejects_a_non_numeric_executed_attribute()
     {
         Assert.Throws<FloorCheckException>(() => FloorCheck.ReadExecuted(Write("r.trx", Trx("<Counters total=\"130\" executed=\"n/a\" />"))));
+    }
+
+    // ReadExecuted does not trim: the executed attribute is written by VSTest as bare digits, so
+    // anything else is an input the check does not recognise and must fail, not be read.
+    // ReadFloor's `floor < 1` would also catch "-1"; ReadExecuted has no such check, so only
+    // NumberStyles.None keeps a negative executed count from reaching the comparison.
+    [Fact]
+    public void ReadExecuted_rejects_a_negative_executed_attribute()
+    {
+        Assert.Throws<FloorCheckException>(() => FloorCheck.ReadExecuted(Write("r.trx", Trx("<Counters total=\"1\" executed=\"-1\" />"))));
+    }
+
+    [Fact]
+    public void ReadExecuted_rejects_a_thousands_separated_executed_attribute()
+    {
+        Assert.Throws<FloorCheckException>(() => FloorCheck.ReadExecuted(Write("r.trx", Trx("<Counters total=\"1000\" executed=\"1,000\" />"))));
+    }
+
+    [Fact]
+    public void ReadExecuted_rejects_an_executed_attribute_with_leading_whitespace()
+    {
+        Assert.Throws<FloorCheckException>(() => FloorCheck.ReadExecuted(Write("r.trx", Trx("<Counters total=\"5\" executed=\" 5\" />"))));
+    }
+
+    [Fact]
+    public void ReadExecuted_rejects_an_executed_attribute_with_trailing_whitespace()
+    {
+        Assert.Throws<FloorCheckException>(() => FloorCheck.ReadExecuted(Write("r.trx", Trx("<Counters total=\"5\" executed=\"5 \" />"))));
     }
 
     [Fact]
