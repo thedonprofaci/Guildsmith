@@ -1,5 +1,4 @@
 using Guildsmith.Core.Configuration;
-using Guildsmith.Core.Security;
 using Guildsmith.Server;
 using Guildsmith.Server.Logging;
 
@@ -112,7 +111,7 @@ public sealed class ServerStartupTests
         host.Services.GetRequiredService<ILogger<ServerStartupTests>>().LogInformation("value-marker {Value}", Token);
 
         string text = stderr.ToString();
-        Assert.Contains($"value-marker {TokenRedactor.Marker}", text, StringComparison.Ordinal);
+        Assert.Contains("value-marker [REDACTED]", text, StringComparison.Ordinal);
         Assert.DoesNotContain(Token, text, StringComparison.Ordinal);
     }
 
@@ -127,7 +126,7 @@ public sealed class ServerStartupTests
 
         string text = stderr.ToString();
         Assert.Contains("line-marker", text, StringComparison.Ordinal);
-        Assert.Contains($"outer-marker {TokenRedactor.Marker}", text, StringComparison.Ordinal);
+        Assert.Contains("outer-marker [REDACTED]", text, StringComparison.Ordinal);
         Assert.DoesNotContain(Token, text, StringComparison.Ordinal);
     }
 
@@ -142,7 +141,7 @@ public sealed class ServerStartupTests
 
         string text = stderr.ToString();
         Assert.Contains("line-marker", text, StringComparison.Ordinal);
-        Assert.Contains($"inner-marker {TokenRedactor.Marker}", text, StringComparison.Ordinal);
+        Assert.Contains("inner-marker [REDACTED]", text, StringComparison.Ordinal);
         Assert.DoesNotContain(Token, text, StringComparison.Ordinal);
     }
 
@@ -203,7 +202,7 @@ public sealed class ServerStartupTests
         string text = ServerStartup.FormatRefusal(errors, Token);
 
         Assert.DoesNotContain(Token, text, StringComparison.Ordinal);
-        Assert.Contains($"echoes {TokenRedactor.Marker}.", text, StringComparison.Ordinal);
+        Assert.Contains("echoes [REDACTED].", text, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -238,8 +237,34 @@ public sealed class ServerStartupTests
         string text = stderr.ToString();
         Assert.Equal(ServerStartup.HostFailureExitCode, exitCode);
         Assert.NotEqual("", text);
-        Assert.Contains($"host-marker {TokenRedactor.Marker}", text, StringComparison.Ordinal);
+        Assert.Contains("host-marker [REDACTED]", text, StringComparison.Ordinal);
         Assert.DoesNotContain(Token, text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RunAsync_writes_a_host_build_failure_redacted_to_stderr_and_returns_the_host_failure_exit_code()
+    {
+        // The test above throws from run, so builder.Build() moved out of the try went unnoticed:
+        // a build failure then escaped RunAsync and the runtime printed it, token included.
+        StringWriter stderr = new();
+        HostApplicationBuilder builder = ValidBuilder();
+        builder.ConfigureContainer(new ThrowingServiceProviderFactory(
+            new InvalidOperationException("build-outer", new InvalidOperationException($"build-marker {Token}"))));
+
+        bool ran = false;
+
+        int exitCode = await ServerStartup.RunAsync(stderr, builder, _ =>
+        {
+            ran = true;
+            return Task.CompletedTask;
+        });
+
+        string text = stderr.ToString();
+        Assert.False(ran);
+        Assert.Equal(ServerStartup.HostFailureExitCode, exitCode);
+        Assert.NotEqual("", text);
+        Assert.DoesNotContain(Token, text, StringComparison.Ordinal);
+        Assert.Contains("build-marker [REDACTED]", text, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -286,7 +311,7 @@ public sealed class ServerStartupTests
         int exitCode = await ServerStartup.RunAsync(stderr, builder, static _ => Task.CompletedTask);
 
         Assert.Equal(ServerStartup.InvalidConfigurationExitCode, exitCode);
-        Assert.Contains($"  {TokenRedactor.Marker}: ", stderr.ToString(), StringComparison.Ordinal);
+        Assert.Contains("  [REDACTED]: ", stderr.ToString(), StringComparison.Ordinal);
         Assert.DoesNotContain("ALLOW_DESTRUCTIVE", stderr.ToString(), StringComparison.Ordinal);
     }
 
@@ -309,6 +334,14 @@ public sealed class ServerStartupTests
     public async Task RunAsync_rejects_a_null_run_delegate()
     {
         await Assert.ThrowsAsync<ArgumentNullException>(() => ServerStartup.RunAsync(new StringWriter(), ValidBuilder(), null!));
+    }
+
+    /// <summary>A container factory whose service provider cannot be built: it throws <c>exception</c>.</summary>
+    private sealed class ThrowingServiceProviderFactory(Exception exception) : IServiceProviderFactory<IServiceCollection>
+    {
+        public IServiceCollection CreateBuilder(IServiceCollection services) => services;
+
+        public IServiceProvider CreateServiceProvider(IServiceCollection containerBuilder) => throw exception;
     }
 
     private static HostApplicationBuilder ValidBuilder()
