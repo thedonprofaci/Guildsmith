@@ -29,11 +29,12 @@ The smoke runs in Git Bash, after the build, and needs no network. It starts the
 > These commands must work on a clean clone. If one only runs on a particular machine, that
 > is a lesson belonging in the `skills/dotnet-mcp/` branch.
 
-**`dotnet test` exits 0 when it discovers zero tests** — measured on this skeleton (SDK 9.0.318, 2026-10-27): no summary line, exit 0. CI enforces a floor: the `Test-count floor` step of `.github/workflows/ci.yml` runs `tests/Guildsmith.TestCountFloor` against the TRX and fails when fewer tests executed than `tests/test-count-floor.txt` holds (163 at `49c2fa0`; raise it in the PR that adds tests). Locally nothing does — read the `Passed!` line, not the exit code.
+**`dotnet test` exits 0 when it discovers zero tests** — measured on this skeleton (SDK 9.0.318, 2026-10-27): no summary line, exit 0. CI enforces a floor: the `Test-count floor` step of `.github/workflows/ci.yml` runs `tests/Guildsmith.TestCountFloor` against the TRX and fails when fewer tests executed than `tests/test-count-floor.txt` holds (read the file for the current value; raise it in the PR that adds tests). Locally nothing does — read the `Passed!` line, not the exit code.
 
 ## Structure
 
 - `src/Guildsmith.Core/` — services, guards, models, `IDiscordGateway`. References neither Discord.Net nor the MCP SDK (spec §4); nothing enforces that yet.
+  - `Guards/` — `GuardPipeline` (the single entry every tool goes through: allowlist incl. the guild resolved from an ID, ReadOnly, destructive gate), `ToolTarget`, `ToolLevel`; `Errors/` — the §8 error codes (`ErrorCode`), `ToolError`, `ToolResult`, `ToolErrorSerializer`; `Arguments/` — `Snowflake` and `GuildArgument` parsing (malformed or empty → `invalid_argument`). Enforced by the matching files under `tests/Guildsmith.Tests/Core/`.
 - `src/Guildsmith.Discord/` — the Discord.Net REST implementation of `IDiscordGateway`.
 - `src/Guildsmith.Server/` — `Program.cs`, the MCP tool classes (`Tools/`), transport selection.
 - `tests/Guildsmith.Tests/` — the one test project.
@@ -63,7 +64,7 @@ The smoke runs in Git Bash, after the build, and needs no network. It starts the
 
 **Phase 1 MVP** (spec §12 is the acceptance list). Done when #1-#11 are closed and the §12 criteria hold, except the release-workflow criterion ("release workflow bináris + NuGet csomagot készít"), which the user moved to the phase 2 milestone on 2026-10-27 (#12, `[P3]`). The README (#11) documents install from source only.
 
-Order: #1 (host, closed by PR #13) → #5 (CI, closed by PR #16) → #2 (guards, `[P1]`) → #3 (token protection) → #4 (audit) → #6 (vertical slice and its amendment pass over #7-#10) → #7, #8, #9, #10 → #11. The guard, token and audit issues are preventive principles of spec §7 and ship **before** the tools they protect (`core/principles-need-backlog-items`).
+Order: #1 (host, closed by PR #13) → #5 (CI, closed by PR #16) → #2 (guards, closed by PR #23) → #3 (token protection, `[P1]`) → #4 (audit) → #6 (vertical slice and its amendment pass over #7-#10) → #7, #8, #9, #10 → #11. The guard, token and audit issues are preventive principles of spec §7 and ship **before** the tools they protect (`core/principles-need-backlog-items`).
 
 ## How to write in this file
 
