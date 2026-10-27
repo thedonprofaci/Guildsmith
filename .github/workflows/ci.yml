@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # The SDK comes from global.json; the 8.0 SDK alongside it brings the net8.0 runtime the
+      # test host runs on, which the 9.0 SDK does not carry.
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+          dotnet-version: 8.0.x
+
+      - name: Restore (locked)
+        run: dotnet restore Guildsmith.sln --locked-mode
+
+      - name: Build
+        run: dotnet build Guildsmith.sln -c Release --no-restore
+
+      - name: Test
+        run: >-
+          dotnet test Guildsmith.sln -c Release --no-build
+          --logger "trx;LogFileName=test-results.trx"
+          --results-directory TestResults
+
+      # dotnet test exits 0 when it discovers no tests; this step fails below the committed floor.
+      # It and every gate after it run even when the test step failed, so one red step does not
+      # mark the others skipped (core/fail-closed-guards).
+      - name: Test-count floor
+        if: success() || failure()
+        run: >-
+          dotnet run --project tests/Guildsmith.TestCountFloor -c Release --no-build --
+          TestResults tests/test-count-floor.txt
+
+      - name: Format check
+        if: success() || failure()
+        run: dotnet format Guildsmith.sln --verify-no-changes --no-restore
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results
+          path: TestResults/*.trx
+          if-no-files-found: warn

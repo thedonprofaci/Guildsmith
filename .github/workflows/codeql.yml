@@ -1,0 +1,39 @@
+name: CodeQL
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+          dotnet-version: 8.0.x
+
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: csharp
+          build-mode: manual
+
+      # A full, non-incremental build the CodeQL tracer observes.
+      - name: Build
+        run: |
+          dotnet restore Guildsmith.sln --locked-mode
+          dotnet build Guildsmith.sln -c Release --no-restore --no-incremental
+
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:csharp
