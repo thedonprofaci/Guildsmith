@@ -85,6 +85,16 @@ public sealed class ToolErrorTests
     }
 
     [Fact]
+    public void InternalErrorMessage_is_the_literal_fixed_text()
+    {
+        // The other assertions on this message read the constant on both sides, so an emptied or
+        // reworded message stayed green. The literal does not move with the constant.
+        Assert.Equal(
+            "The tool call failed with an unexpected error. The server log holds the detail under correlation_id.",
+            ToolError.InternalErrorMessage);
+    }
+
+    [Fact]
     public void Internal_carries_the_code_the_correlation_id_and_the_fixed_message()
     {
         ToolError error = ToolError.Internal("4f1c0b9e");
