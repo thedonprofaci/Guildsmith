@@ -1,3 +1,4 @@
+using Guildsmith.Core.Audit;
 using Guildsmith.Core.Configuration;
 using Guildsmith.Core.Errors;
 using Guildsmith.Core.Gateway;
@@ -28,6 +29,7 @@ public sealed class GuardPipelineTests
     private const ulong MessageId = 7001;
 
     private const string LogToken = "FAKE-TOKEN-guildsmith-test-0003";
+    private const string AuditedTool = "audited_tool";
 
     private static readonly HashSet<ulong> BothGuilds = [GuildA, GuildB];
 
@@ -68,7 +70,7 @@ public sealed class GuardPipelineTests
     {
         GuardPipeline pipeline = new(Options(BothGuilds, DiscordMcpMode.ReadWrite, false), _gateway);
 
-        await Assert.ThrowsAsync<ArgumentNullException>(() => pipeline.RunAsync(ToolLevel.Read, null!, Operation));
+        await Assert.ThrowsAsync<ArgumentNullException>(() => pipeline.RunAsync("test_tool", ToolLevel.Read, null!, Operation));
     }
 
     [Fact]
@@ -77,7 +79,7 @@ public sealed class GuardPipelineTests
         GuardPipeline pipeline = new(Options(BothGuilds, DiscordMcpMode.ReadWrite, false), _gateway);
 
         await Assert.ThrowsAsync<ArgumentNullException>(
-            () => pipeline.RunAsync<string>(ToolLevel.Read, ToolTarget.Guild("111"), null!));
+            () => pipeline.RunAsync<string>("test_tool", ToolLevel.Read, ToolTarget.Guild("111"), null!));
     }
 
     // ---- passing calls reach the operation, with the gateway ----
@@ -557,7 +559,326 @@ public sealed class GuardPipelineTests
         Assert.Contains("late-marker", log.ToString(), StringComparison.Ordinal);
     }
 
+    // ---- the audit entry of a Write or Destructive call (spec section 7.8) ----
+    //
+    // The expected entries are AuditEntry.Render over IDs typed into each test: Render's own exact
+    // strings are pinned in AuditEntryTests, and these tests pin what the pipeline hands it.
+
+    [Fact]
+    public async Task RunAsync_audits_a_successful_write_call_once_with_the_tool_level_guild_channel_and_message()
+    {
+        StringWriter log = new();
+
+        ToolResult<string> result = await RunAudited(log, AuditOptions(DiscordMcpMode.ReadWrite, false), ToolLevel.Write, ToolTarget.Message("5001", "7001"));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal([Entry(ToolLevel.Write, GuildA, ChannelInA, null, MessageId, AuditOutcome.Success)], AuditEntries(log));
+    }
+
+    [Fact]
+    public async Task RunAsync_audits_a_successful_destructive_call_once_with_the_tool_level_guild_and_role()
+    {
+        StringWriter log = new();
+
+        ToolResult<string> result = await RunAudited(log, AuditOptions(DiscordMcpMode.ReadWrite, true), ToolLevel.Destructive, ToolTarget.Role("6002"));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal([Entry(ToolLevel.Destructive, GuildB, null, RoleInB, null, AuditOutcome.Success)], AuditEntries(log));
+    }
+
+    [Fact]
+    public async Task RunAsync_writes_no_audit_entry_for_a_successful_read_call()
+    {
+        StringWriter log = new();
+
+        ToolResult<string> result = await RunAudited(log, AuditOptions(DiscordMcpMode.ReadWrite, false), ToolLevel.Read, ToolTarget.Channel("5001"));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("", log.ToString());
+    }
+
+    [Fact]
+    public async Task RunAsync_writes_no_audit_entry_for_a_refused_read_call()
+    {
+        StringWriter log = new();
+
+        ToolResult<string> result = await RunAudited(log, AuditOptions(DiscordMcpMode.ReadWrite, false), ToolLevel.Read, ToolTarget.Guild("999"));
+
+        Assert.Equal(ErrorCode.ForbiddenGuild, result.Error!.Code);
+        Assert.Equal("", log.ToString());
+    }
+
+    [Fact]
+    public async Task RunAsync_audits_a_forbidden_supplied_guild_id_with_forbidden_guild()
+    {
+        StringWriter log = new();
+
+        await RunAudited(log, AuditOptions(DiscordMcpMode.ReadWrite, false), ToolLevel.Write, ToolTarget.Guild("999"));
+
+        Assert.Equal([Entry(ToolLevel.Write, ForeignGuild, null, null, null, AuditOutcome.Failed(ErrorCode.ForbiddenGuild))], AuditEntries(log));
+    }
+
+    [Fact]
+    public async Task RunAsync_audits_a_forbidden_resolved_guild_with_forbidden_guild_and_the_resolved_guild()
+    {
+        StringWriter log = new();
+
+        await RunAudited(log, AuditOptions(DiscordMcpMode.ReadWrite, false), ToolLevel.Write, ToolTarget.Channel("5009"));
+
+        Assert.Equal([Entry(ToolLevel.Write, ForeignGuild, ChannelInForeign, null, null, AuditOutcome.Failed(ErrorCode.ForbiddenGuild))], AuditEntries(log));
+    }
+
+    [Fact]
+    public async Task RunAsync_audits_a_write_refused_in_read_only_mode_with_read_only_mode()
+    {
+        StringWriter log = new();
+
+        await RunAudited(log, AuditOptions(DiscordMcpMode.ReadOnly, false), ToolLevel.Write, ToolTarget.Guild("111"));
+
+        Assert.Equal([Entry(ToolLevel.Write, GuildA, null, null, null, AuditOutcome.Failed(ErrorCode.ReadOnlyMode))], AuditEntries(log));
+    }
+
+    [Fact]
+    public async Task RunAsync_audits_a_destructive_call_refused_by_the_destructive_gate_with_destructive_disabled()
+    {
+        StringWriter log = new();
+
+        await RunAudited(log, AuditOptions(DiscordMcpMode.ReadWrite, false), ToolLevel.Destructive, ToolTarget.Role("6002"));
+
+        Assert.Equal([Entry(ToolLevel.Destructive, GuildB, null, RoleInB, null, AuditOutcome.Failed(ErrorCode.DestructiveDisabled))], AuditEntries(log));
+    }
+
+    [Fact]
+    public async Task RunAsync_audits_an_unresolved_channel_with_not_found_and_the_channel_id()
+    {
+        StringWriter log = new();
+
+        await RunAudited(log, AuditOptions(DiscordMcpMode.ReadWrite, false), ToolLevel.Write, ToolTarget.Channel("5404"));
+
+        Assert.Equal([Entry(ToolLevel.Write, null, UnknownChannel, null, null, AuditOutcome.Failed(ErrorCode.NotFound))], AuditEntries(log));
+    }
+
+    [Fact]
+    public async Task RunAsync_audits_an_unresolved_role_with_not_found_and_the_role_id()
+    {
+        StringWriter log = new();
+
+        await RunAudited(log, AuditOptions(DiscordMcpMode.ReadWrite, false), ToolLevel.Write, ToolTarget.Role("6404"));
+
+        Assert.Equal([Entry(ToolLevel.Write, null, null, UnknownRole, null, AuditOutcome.Failed(ErrorCode.NotFound))], AuditEntries(log));
+    }
+
+    [Fact]
+    public async Task RunAsync_audits_an_unresolved_channel_with_the_supplied_guild_id_it_parsed()
+    {
+        StringWriter log = new();
+
+        await RunAudited(log, AuditOptions(DiscordMcpMode.ReadWrite, false), ToolLevel.Write, ToolTarget.Channel("5404", "222"));
+
+        Assert.Equal([Entry(ToolLevel.Write, GuildB, UnknownChannel, null, null, AuditOutcome.Failed(ErrorCode.NotFound))], AuditEntries(log));
+    }
+
+    [Fact]
+    public async Task RunAsync_audits_a_malformed_channel_id_with_invalid_argument_and_only_the_message_id_that_parsed()
+    {
+        StringWriter log = new();
+
+        await RunAudited(log, AuditOptions(DiscordMcpMode.ReadWrite, false), ToolLevel.Write, ToolTarget.Message("x", "7001"));
+
+        Assert.Equal([Entry(ToolLevel.Write, null, null, null, MessageId, AuditOutcome.Failed(ErrorCode.InvalidArgument))], AuditEntries(log));
+    }
+
+    [Fact]
+    public async Task RunAsync_audits_an_empty_supplied_guild_id_with_invalid_argument()
+    {
+        StringWriter log = new();
+
+        await RunAudited(log, AuditOptions(DiscordMcpMode.ReadWrite, false), ToolLevel.Write, ToolTarget.Channel("5001", ""));
+
+        Assert.Equal([Entry(ToolLevel.Write, null, null, null, null, AuditOutcome.Failed(ErrorCode.InvalidArgument))], AuditEntries(log));
+    }
+
+    [Fact]
+    public async Task RunAsync_audits_a_supplied_guild_id_that_differs_from_the_resolved_guild_with_invalid_argument_and_the_resolved_guild()
+    {
+        StringWriter log = new();
+
+        await RunAudited(log, AuditOptions(DiscordMcpMode.ReadWrite, false), ToolLevel.Write, ToolTarget.Channel("5001", "222"));
+
+        Assert.Equal([Entry(ToolLevel.Write, GuildA, ChannelInA, null, null, AuditOutcome.Failed(ErrorCode.InvalidArgument))], AuditEntries(log));
+    }
+
+    [Fact]
+    public async Task RunAsync_audits_an_internal_error_once_next_to_the_error_level_detail_under_its_own_category()
+    {
+        StringWriter log = new();
+
+        ToolResult<string> result = await RunAudited(log, AuditOptions(DiscordMcpMode.ReadWrite, false), ToolLevel.Write, ToolTarget.Guild("111"),
+            (_, _, _) => throw new InvalidOperationException("detail-marker"));
+
+        Assert.Equal(ErrorCode.InternalError, result.Error!.Code);
+        Assert.Equal([Entry(ToolLevel.Write, GuildA, null, null, null, AuditOutcome.Failed(ErrorCode.InternalError))], AuditEntries(log));
+
+        // The detail stays on the GuardPipeline category, at Error, and the audit entry does not carry it.
+        string text = log.ToString();
+        Assert.StartsWith("Error: Guildsmith.Core.Guards.GuardPipeline[", text, StringComparison.Ordinal);
+        Assert.Contains("detail-marker", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("detail-marker", Assert.Single(AuditEntries(log)), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RunAsync_audits_an_internal_error_of_the_channel_resolution_with_the_channel_id()
+    {
+        StringWriter log = new();
+        _gateway.GetChannelGuildIdAsync(ChannelInA, Arg.Any<CancellationToken>())
+            .Returns<Task<ulong?>>(_ => throw new HttpRequestException("gateway-marker"));
+
+        await RunAudited(log, AuditOptions(DiscordMcpMode.ReadWrite, false), ToolLevel.Write, ToolTarget.Channel("5001"));
+
+        Assert.Equal([Entry(ToolLevel.Write, null, ChannelInA, null, null, AuditOutcome.Failed(ErrorCode.InternalError))], AuditEntries(log));
+    }
+
+    [Fact]
+    public async Task RunAsync_audits_a_cancelled_write_as_cancelled_and_lets_the_cancellation_propagate()
+    {
+        StringWriter log = new();
+        using CancellationTokenSource cancel = new();
+        cancel.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => RunAudited(log, AuditOptions(DiscordMcpMode.ReadWrite, false), ToolLevel.Write,
+            ToolTarget.Guild("111"), (_, _, token) => throw new OperationCanceledException(token), cancel.Token));
+
+        Assert.Equal([Entry(ToolLevel.Write, GuildA, null, null, null, AuditOutcome.Cancelled)], AuditEntries(log));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task RunAsync_rejects_a_null_empty_or_blank_tool_name_before_the_operation_runs(string? toolName)
+    {
+        GuardPipeline pipeline = new(Options(BothGuilds, DiscordMcpMode.ReadWrite, false), _gateway);
+
+        await Assert.ThrowsAnyAsync<ArgumentException>(
+            () => pipeline.RunAsync(toolName!, ToolLevel.Read, ToolTarget.Guild("111"), Operation, _token));
+
+        Assert.False(_invoked);
+    }
+
+    // ---- what never reaches the audit entry ----
+
+    [Fact]
+    public async Task RunAsync_keeps_a_malformed_channel_ids_text_out_of_the_audit_entry()
+    {
+        StringWriter log = new();
+
+        await RunAudited(log, AuditOptions(DiscordMcpMode.ReadWrite, false), ToolLevel.Write, ToolTarget.Channel("AUDIT-MARKER-channel"));
+
+        Assert.Single(AuditEntries(log));
+        Assert.DoesNotContain("AUDIT-MARKER-channel", log.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RunAsync_keeps_the_operations_return_value_out_of_the_audit_entry()
+    {
+        StringWriter log = new();
+
+        await RunAudited(log, AuditOptions(DiscordMcpMode.ReadWrite, false), ToolLevel.Write, ToolTarget.Guild("111"),
+            (_, _, _) => Task.FromResult("AUDIT-MARKER-result"));
+
+        Assert.Single(AuditEntries(log));
+        Assert.DoesNotContain("AUDIT-MARKER-result", log.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RunAsync_keeps_the_token_out_of_the_audit_entry_when_the_operation_throws_it()
+    {
+        StringWriter log = new();
+
+        await RunAudited(log, AuditOptions(DiscordMcpMode.ReadWrite, false), ToolLevel.Write, ToolTarget.Guild("111"),
+            (_, _, _) => throw new InvalidOperationException($"token-marker {LogToken}"));
+
+        Assert.DoesNotContain(LogToken, Assert.Single(AuditEntries(log)), StringComparison.Ordinal);
+        Assert.DoesNotContain(LogToken, log.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RunAsync_writes_the_audit_entry_redacted_to_stderr_at_log_level_error_and_nothing_to_stdout()
+    {
+        StringWriter log = new();
+        StringWriter stdout = new();
+        TextWriter original = Console.Out;
+        Console.SetOut(stdout);
+        try
+        {
+            // The token inside the tool name is the one way to put it into an audit entry, so its
+            // redaction shows the entry went through the redacting provider.
+            await RunAudited(log, AuditOptions(DiscordMcpMode.ReadWrite, false, LogLevel.Error), ToolLevel.Write, ToolTarget.Guild("111"),
+                Operation, _token, $"tool_{LogToken}");
+        }
+        finally
+        {
+            Console.SetOut(original);
+        }
+
+        Assert.Equal([AuditEntry.Render("tool_[REDACTED]", ToolLevel.Write, GuildA, null, null, null, AuditOutcome.Success)], AuditEntries(log));
+        Assert.DoesNotContain(LogToken, log.ToString(), StringComparison.Ordinal);
+        Assert.Equal("", stdout.ToString());
+    }
+
     // ---- helpers ----
+
+    // The real logging pipeline ServerStartup.ConfigureServices builds, writing to log, around a
+    // pipeline that audits through it.
+    private async Task<ToolResult<string>> RunAudited(
+        StringWriter log,
+        GuildsmithOptions options,
+        ToolLevel level,
+        ToolTarget target,
+        Func<IDiscordGateway, GuardedTarget, CancellationToken, Task<string>>? operation = null,
+        CancellationToken cancellationToken = default,
+        string toolName = AuditedTool)
+    {
+        HostApplicationBuilder builder = Host.CreateEmptyApplicationBuilder(new HostApplicationBuilderSettings());
+        ServerStartup.ConfigureServices(builder, options, log);
+        using IHost host = builder.Build();
+
+        GuardPipeline pipeline = new(options, _gateway, host.Services.GetRequiredService<ILoggerFactory>());
+        return await pipeline.RunAsync(toolName, level, target, operation ?? Operation, cancellationToken);
+    }
+
+    private static GuildsmithOptions AuditOptions(DiscordMcpMode mode, bool allowDestructive, LogLevel logLevel = LogLevel.Information) => new()
+    {
+        DiscordToken = LogToken,
+        AllowedGuildIds = BothGuilds,
+        Mode = mode,
+        AllowDestructive = allowDestructive,
+        AllowAdminGrant = false,
+        MaxMessagesPerRead = 50,
+        Transport = McpTransport.Stdio,
+        LogLevel = logLevel,
+    };
+
+    private static string Entry(ToolLevel level, ulong? guildId, ulong? channelId, ulong? roleId, ulong? messageId, AuditOutcome outcome) =>
+        AuditEntry.Render(AuditedTool, level, guildId, channelId, roleId, messageId, outcome);
+
+    // The message of every line RedactingLoggerProvider wrote at Information under the audit
+    // category, in order. The header and the six-space indent are that provider's line format;
+    // the category is typed in, not read from AuditEntry.Category.
+    private static List<string> AuditEntries(StringWriter log)
+    {
+        string[] lines = log.ToString().Split('\n');
+        List<string> entries = [];
+        for (int i = 0; i + 1 < lines.Length; i++)
+        {
+            if (lines[i].StartsWith("Information: Guildsmith.Audit[", StringComparison.Ordinal))
+            {
+                entries.Add(lines[i + 1]["      ".Length..]);
+            }
+        }
+
+        return entries;
+    }
 
     // The real logging pipeline ServerStartup.ConfigureServices builds, writing to log.
     private async Task<ToolResult<string>> RunLogged(
@@ -571,8 +892,8 @@ public sealed class GuardPipelineTests
         ServerStartup.ConfigureServices(builder, options, log);
         using IHost host = builder.Build();
 
-        GuardPipeline pipeline = new(options, _gateway, host.Services.GetRequiredService<ILogger<GuardPipeline>>());
-        return await pipeline.RunAsync(ToolLevel.Read, target, operation, cancellationToken);
+        GuardPipeline pipeline = new(options, _gateway, host.Services.GetRequiredService<ILoggerFactory>());
+        return await pipeline.RunAsync("test_tool", ToolLevel.Read, target, operation, cancellationToken);
     }
 
     private static void AssertInternalErrorWithoutToken(ToolResult<string> result, StringWriter log, string markerWord)
@@ -603,7 +924,7 @@ public sealed class GuardPipelineTests
     };
 
     private Task<ToolResult<string>> Run(GuildsmithOptions options, ToolLevel level, ToolTarget target) =>
-        new GuardPipeline(options, _gateway).RunAsync(level, target, Operation, _token);
+        new GuardPipeline(options, _gateway).RunAsync("test_tool", level, target, Operation, _token);
 
     private Task<string> Operation(IDiscordGateway gateway, GuardedTarget target, CancellationToken cancellationToken)
     {
