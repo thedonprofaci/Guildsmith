@@ -751,6 +751,17 @@ public sealed class GuardPipelineTests
         Assert.Equal([Entry(ToolLevel.Write, GuildA, null, null, null, AuditOutcome.Cancelled)], AuditEntries(log));
     }
 
+    [Fact]
+    public void Constructor_rejects_a_null_logger_factory_by_its_own_name()
+    {
+        // ILoggerFactory.CreateLogger<T> throws ArgumentNullException as well, naming "factory";
+        // only the constructor's own check names the parameter the caller passed.
+        ArgumentNullException exception = Assert.Throws<ArgumentNullException>(
+            () => new GuardPipeline(Options(BothGuilds, DiscordMcpMode.ReadWrite, false), _gateway, (ILoggerFactory)null!));
+
+        Assert.Equal("loggerFactory", exception.ParamName);
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]
