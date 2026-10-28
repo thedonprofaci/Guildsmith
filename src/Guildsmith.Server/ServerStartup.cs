@@ -1,3 +1,4 @@
+using Guildsmith.Core.Audit;
 using Guildsmith.Core.Configuration;
 using Guildsmith.Core.Security;
 using Guildsmith.Server.Logging;
@@ -96,7 +97,8 @@ public static class ServerStartup
 
     /// <summary>
     /// Registers the validated options, logging to <paramref name="stderr"/> through the
-    /// redacting provider only, and the MCP server with no tools.
+    /// redacting provider only, with the audit category kept at <see cref="LogLevel.Information"/>
+    /// whatever the minimum level is, and the MCP server with no tools.
     /// </summary>
     public static void ConfigureServices(HostApplicationBuilder builder, GuildsmithOptions options, TextWriter stderr)
     {
@@ -106,6 +108,10 @@ public static class ServerStartup
         // before it is written. A second provider added here would print the token unredacted.
         builder.Logging.AddProvider(new RedactingLoggerProvider(new TokenRedactor(options.DiscordToken), stderr));
         builder.Logging.SetMinimumLevel(options.LogLevel);
+
+        // The audit entries of spec section 7.8 are kept whatever LOG_LEVEL says: an operator who
+        // set it to Error to quiet the server must still see every write the server made.
+        builder.Logging.AddFilter(AuditEntry.Category, LogLevel.Information);
 
         // An empty tool collection, not none: without one the server does not advertise the
         // tools capability, and tools/list fails with "Method 'tools/list' is not available".
