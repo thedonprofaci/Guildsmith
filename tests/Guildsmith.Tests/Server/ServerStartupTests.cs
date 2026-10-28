@@ -156,6 +156,18 @@ public sealed class ServerStartupTests
     }
 
     [Fact]
+    public void ConfigureServices_keeps_the_audit_category_at_information_when_the_log_level_is_error()
+    {
+        using IHost host = BuildHost(Options(LogLevel.Error));
+        ILoggerFactory loggers = host.Services.GetRequiredService<ILoggerFactory>();
+
+        // Both categories typed in: the audit one, and the GuardPipeline one that proves the
+        // filter is scoped to the audit category rather than lowering the minimum level.
+        Assert.True(loggers.CreateLogger("Guildsmith.Audit").IsEnabled(LogLevel.Information));
+        Assert.False(loggers.CreateLogger("Guildsmith.Core.Guards.GuardPipeline").IsEnabled(LogLevel.Information));
+    }
+
+    [Fact]
     public void ConfigureServices_serves_an_empty_tool_collection()
     {
         using IHost host = BuildHost(Options(LogLevel.Information));
