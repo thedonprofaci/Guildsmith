@@ -55,13 +55,14 @@ public sealed class GuardPipeline
     /// refusal otherwise, in which case the operation is never invoked. A call addressed by
     /// <c>guild_id</c> makes no gateway call before the operation; a call addressed by a channel,
     /// role or message ID makes exactly one, to resolve the guild that ID belongs to.
-    /// An exception the gateway or the operation throws is logged at <see cref="LogLevel.Error"/> and
-    /// returned as <see cref="ErrorCode.InternalError"/>; only an <see cref="OperationCanceledException"/>
+    /// A <see cref="DiscordFailureException"/> the gateway or the operation throws is returned as the
+    /// error it carries. Any other exception is logged at <see cref="LogLevel.Error"/> and returned as
+    /// <see cref="ErrorCode.InternalError"/>; only an <see cref="OperationCanceledException"/>
     /// thrown while <paramref name="cancellationToken"/> is cancelled propagates.
     /// A <see cref="ToolLevel.Write"/> or <see cref="ToolLevel.Destructive"/> call writes one audit
-    /// entry naming <paramref name="toolName"/>: on success, on a refusal, on <c>internal_error</c>,
-    /// and as <c>cancelled</c> before that cancellation propagates. A <see cref="ToolLevel.Read"/>
-    /// call writes none.
+    /// entry naming <paramref name="toolName"/>: on success, on a refusal, on a mapped Discord failure,
+    /// on <c>internal_error</c>, and as <c>cancelled</c> before that cancellation propagates. A
+    /// <see cref="ToolLevel.Read"/> call writes none.
     /// </summary>
     public async Task<ToolResult<T>> RunAsync<T>(
         string toolName,
@@ -74,11 +75,49 @@ public sealed class GuardPipeline
         ArgumentNullException.ThrowIfNull(target);
         ArgumentNullException.ThrowIfNull(operation);
 
+        return await ExecuteAsync(toolName, level, ids => GuardAndRunAsync(level, target, operation, ids, cancellationToken), cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// <see cref="RunAsync{T}"/> for a call that is not scoped to one guild, such as
+    /// <c>list_guilds</c>: there is no guild to check against the allowlist, so the operation receives
+    /// no <see cref="GuardedTarget"/>, and filtering its result by the allowlist is the caller's job.
+    /// Everything else is the same as for a guild-scoped call: the ReadOnly mode and destructive gate
+    /// refusals, the mapped Discord failure, the <c>internal_error</c> boundary, and one audit entry,
+    /// with no IDs, for a Write or Destructive call.
+    /// </summary>
+    public async Task<ToolResult<T>> RunUnscopedAsync<T>(
+        string toolName,
+        ToolLevel level,
+        Func<IDiscordGateway, CancellationToken, Task<T>> operation,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(toolName);
+        ArgumentNullException.ThrowIfNull(operation);
+
+        return await ExecuteAsync(toolName, level, _ => CheckLevelAndRunAsync(level, operation, cancellationToken), cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    // The exception boundary and the audit point that both forms share.
+    private async Task<ToolResult<T>> ExecuteAsync<T>(
+        string toolName,
+        ToolLevel level,
+        Func<AuditIds, Task<ToolResult<T>>> guardAndRun,
+        CancellationToken cancellationToken)
+    {
         AuditIds ids = new();
         ToolResult<T> result;
         try
         {
-            result = await GuardAndRunAsync(level, target, operation, ids, cancellationToken).ConfigureAwait(false);
+            result = await guardAndRun(ids).ConfigureAwait(false);
+        }
+        catch (DiscordFailureException failure)
+        {
+            // Discord refused the call for a reason the model can act on (spec section 8), already
+            // mapped by the gateway, so it is returned as that code rather than as internal_error.
+            result = ToolResult<T>.Failure(failure.Error);
         }
         catch (Exception exception) when (!(exception is OperationCanceledException && cancellationToken.IsCancellationRequested))
         {
@@ -98,6 +137,22 @@ public sealed class GuardPipeline
 
         Audit(toolName, level, ids, result.IsSuccess ? AuditOutcome.Success : AuditOutcome.Failed(result.Error.Code));
         return result;
+    }
+
+    private async Task<ToolResult<T>> CheckLevelAndRunAsync<T>(
+        ToolLevel level,
+        Func<IDiscordGateway, CancellationToken, Task<T>> operation,
+        CancellationToken cancellationToken)
+    {
+        ToolError? refusal = ReadOnlyModeGuard.Check(level, _options.Mode)
+            ?? DestructiveGate.Check(level, _options.AllowDestructive);
+        if (refusal is not null)
+        {
+            return ToolResult<T>.Failure(refusal);
+        }
+
+        T value = await operation(_gateway, cancellationToken).ConfigureAwait(false);
+        return ToolResult<T>.Success(value);
     }
 
     private void Audit(string toolName, ToolLevel level, AuditIds ids, AuditOutcome outcome)

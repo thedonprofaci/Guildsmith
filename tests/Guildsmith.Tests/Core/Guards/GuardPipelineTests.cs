@@ -837,7 +837,217 @@ public sealed class GuardPipelineTests
         Assert.Equal("", stdout.ToString());
     }
 
+    // ---- a mapped Discord failure (issue #6): its own code, not internal_error ----
+
+    [Fact]
+    public async Task RunAsync_returns_the_error_a_discord_failure_carries_instead_of_internal_error_and_logs_nothing()
+    {
+        StringWriter log = new();
+        ToolError mapped = new(ErrorCode.NotFound, "mapped-marker");
+
+        ToolResult<string> result = await RunLogged(log, ToolTarget.Guild("111"),
+            (_, _, _) => throw new DiscordFailureException(mapped, null));
+
+        Assert.False(result.IsSuccess);
+        Assert.Same(mapped, result.Error);
+        Assert.Equal("", log.ToString());
+    }
+
+    [Fact]
+    public async Task RunAsync_returns_the_error_of_a_discord_failure_thrown_by_the_channel_resolution()
+    {
+        ToolError mapped = new(ErrorCode.MissingPermission, "resolution-marker");
+        _gateway.GetChannelGuildIdAsync(ChannelInA, Arg.Any<CancellationToken>())
+            .Returns<Task<ulong?>>(_ => throw new DiscordFailureException(mapped, null));
+
+        ToolResult<string> result = await Run(Options(BothGuilds, DiscordMcpMode.ReadWrite, false), ToolLevel.Read, ToolTarget.Channel("5001"));
+
+        Assert.Same(mapped, result.Error);
+        Assert.False(_invoked);
+    }
+
+    [Fact]
+    public async Task RunAsync_audits_a_write_ending_in_a_mapped_discord_failure_with_the_mapped_code()
+    {
+        StringWriter log = new();
+
+        ToolResult<string> result = await RunAudited(log, AuditOptions(DiscordMcpMode.ReadWrite, false), ToolLevel.Write, ToolTarget.Guild("111"),
+            (_, _, _) => throw new DiscordFailureException(new ToolError(ErrorCode.MissingPermission, "x"), null));
+
+        Assert.Equal(ErrorCode.MissingPermission, result.Error!.Code);
+        Assert.Equal([Entry(ToolLevel.Write, GuildA, null, null, null, AuditOutcome.Failed(ErrorCode.MissingPermission))], AuditEntries(log));
+    }
+
+    // ---- the form for a call that is not scoped to one guild (list_guilds) ----
+
+    [Fact]
+    public async Task RunUnscopedAsync_hands_the_gateway_and_the_callers_token_to_the_operation_and_makes_no_gateway_call_itself()
+    {
+        GuardPipeline pipeline = new(Options(BothGuilds, DiscordMcpMode.ReadWrite, false), _gateway);
+
+        ToolResult<string> result = await pipeline.RunUnscopedAsync("test_tool", ToolLevel.Read, UnscopedOperation, _token);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("done", result.Value);
+        Assert.Same(_gateway, _operationGateway);
+        Assert.Equal(_token, _operationToken);
+        Assert.Empty(_gateway.ReceivedCalls());
+    }
+
+    [Fact]
+    public async Task RunUnscopedAsync_passes_read_in_read_only_mode()
+    {
+        ToolResult<string> result = await RunUnscoped(Options(BothGuilds, DiscordMcpMode.ReadOnly, false), ToolLevel.Read);
+
+        Assert.True(result.IsSuccess);
+        Assert.True(_invoked);
+    }
+
+    [Theory]
+    [InlineData(ToolLevel.Write)]
+    [InlineData(ToolLevel.Destructive)]
+    public async Task RunUnscopedAsync_refuses_write_and_destructive_in_read_only_mode(ToolLevel level)
+    {
+        AssertRefused(await RunUnscoped(Options(BothGuilds, DiscordMcpMode.ReadOnly, true), level), ErrorCode.ReadOnlyMode);
+    }
+
+    [Fact]
+    public async Task RunUnscopedAsync_refuses_destructive_while_destructive_tools_are_disabled()
+    {
+        AssertRefused(await RunUnscoped(Options(BothGuilds, DiscordMcpMode.ReadWrite, false), ToolLevel.Destructive), ErrorCode.DestructiveDisabled);
+    }
+
+    [Fact]
+    public async Task RunUnscopedAsync_passes_destructive_when_destructive_tools_are_allowed()
+    {
+        ToolResult<string> result = await RunUnscoped(Options(BothGuilds, DiscordMcpMode.ReadWrite, true), ToolLevel.Destructive);
+
+        Assert.True(result.IsSuccess);
+        Assert.True(_invoked);
+    }
+
+    [Fact]
+    public async Task RunUnscopedAsync_returns_internal_error_and_logs_the_exception_at_error_level()
+    {
+        StringWriter log = new();
+
+        ToolResult<string> result = await RunUnscopedAudited(log, AuditOptions(DiscordMcpMode.ReadWrite, false), ToolLevel.Read,
+            (_, _) => throw new InvalidOperationException("unscoped-marker"));
+
+        Assert.Equal(ErrorCode.InternalError, result.Error!.Code);
+        string text = log.ToString();
+        Assert.StartsWith("Error: Guildsmith.Core.Guards.GuardPipeline[", text, StringComparison.Ordinal);
+        Assert.Contains(result.Error.CorrelationId!, text, StringComparison.Ordinal);
+        Assert.Contains("unscoped-marker", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RunUnscopedAsync_returns_the_error_a_discord_failure_carries_instead_of_internal_error()
+    {
+        StringWriter log = new();
+        ToolError mapped = new(ErrorCode.NotFound, "mapped-marker");
+
+        ToolResult<string> result = await RunUnscopedAudited(log, AuditOptions(DiscordMcpMode.ReadWrite, false), ToolLevel.Read,
+            (_, _) => throw new DiscordFailureException(mapped, null));
+
+        Assert.Same(mapped, result.Error);
+        Assert.Equal("", log.ToString());
+    }
+
+    [Fact]
+    public async Task RunUnscopedAsync_audits_a_successful_write_once_with_no_ids()
+    {
+        StringWriter log = new();
+
+        await RunUnscopedAudited(log, AuditOptions(DiscordMcpMode.ReadWrite, false), ToolLevel.Write, UnscopedOperation);
+
+        Assert.Equal(["tool=audited_tool level=write outcome=success"], AuditEntries(log));
+    }
+
+    [Fact]
+    public async Task RunUnscopedAsync_audits_a_write_refused_in_read_only_mode_with_read_only_mode()
+    {
+        StringWriter log = new();
+
+        await RunUnscopedAudited(log, AuditOptions(DiscordMcpMode.ReadOnly, false), ToolLevel.Write, UnscopedOperation);
+
+        Assert.Equal([Entry(ToolLevel.Write, null, null, null, null, AuditOutcome.Failed(ErrorCode.ReadOnlyMode))], AuditEntries(log));
+        Assert.False(_invoked);
+    }
+
+    [Fact]
+    public async Task RunUnscopedAsync_writes_no_audit_entry_for_a_read_call()
+    {
+        StringWriter log = new();
+
+        ToolResult<string> result = await RunUnscopedAudited(log, AuditOptions(DiscordMcpMode.ReadWrite, false), ToolLevel.Read, UnscopedOperation);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("", log.ToString());
+    }
+
+    [Fact]
+    public async Task RunUnscopedAsync_audits_a_cancelled_write_as_cancelled_and_lets_the_cancellation_propagate()
+    {
+        StringWriter log = new();
+        using CancellationTokenSource cancel = new();
+        cancel.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => RunUnscopedAudited(log, AuditOptions(DiscordMcpMode.ReadWrite, false),
+            ToolLevel.Write, (_, token) => throw new OperationCanceledException(token), cancel.Token));
+
+        Assert.Equal([Entry(ToolLevel.Write, null, null, null, null, AuditOutcome.Cancelled)], AuditEntries(log));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("  ")]
+    public async Task RunUnscopedAsync_rejects_a_null_empty_or_blank_tool_name_before_the_operation_runs(string? toolName)
+    {
+        GuardPipeline pipeline = new(Options(BothGuilds, DiscordMcpMode.ReadWrite, false), _gateway);
+
+        await Assert.ThrowsAnyAsync<ArgumentException>(() => pipeline.RunUnscopedAsync(toolName!, ToolLevel.Read, UnscopedOperation));
+        Assert.False(_invoked);
+    }
+
+    [Fact]
+    public async Task RunUnscopedAsync_rejects_a_null_operation()
+    {
+        GuardPipeline pipeline = new(Options(BothGuilds, DiscordMcpMode.ReadWrite, false), _gateway);
+
+        await Assert.ThrowsAsync<ArgumentNullException>(() => pipeline.RunUnscopedAsync<string>("test_tool", ToolLevel.Read, null!));
+    }
+
     // ---- helpers ----
+
+    private Task<ToolResult<string>> RunUnscoped(GuildsmithOptions options, ToolLevel level) =>
+        new GuardPipeline(options, _gateway).RunUnscopedAsync("test_tool", level, UnscopedOperation, _token);
+
+    // RunAudited for the unscoped form.
+    private async Task<ToolResult<string>> RunUnscopedAudited(
+        StringWriter log,
+        GuildsmithOptions options,
+        ToolLevel level,
+        Func<IDiscordGateway, CancellationToken, Task<string>> operation,
+        CancellationToken cancellationToken = default)
+    {
+        HostApplicationBuilder builder = Host.CreateEmptyApplicationBuilder(new HostApplicationBuilderSettings());
+        ServerStartup.ConfigureServices(builder, options, log);
+        using IHost host = builder.Build();
+
+        GuardPipeline pipeline = new(options, _gateway, host.Services.GetRequiredService<ILoggerFactory>());
+        return await pipeline.RunUnscopedAsync(AuditedTool, level, operation, cancellationToken);
+    }
+
+    private Task<string> UnscopedOperation(IDiscordGateway gateway, CancellationToken cancellationToken)
+    {
+        _invoked = true;
+        _operationGateway = gateway;
+        _operationToken = cancellationToken;
+        return Task.FromResult("done");
+    }
+
 
     // The real logging pipeline ServerStartup.ConfigureServices builds, writing to log, around a
     // pipeline that audits through it.
