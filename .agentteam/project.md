@@ -68,7 +68,7 @@ The smoke runs in Git Bash, after the build, and needs no network. It starts the
 
 **Phase 1 MVP** (spec §12 is the acceptance list). Done when #1-#11 are closed and the §12 criteria hold, except the release-workflow criterion ("release workflow bináris + NuGet csomagot készít"), which the user moved to the phase 2 milestone on 2026-10-27 (#12, `[P3]`). The README (#11) documents install from source only.
 
-Order: #1 (host, closed by PR #13) → #5 (CI, closed by PR #16) → #2 (guards, closed by PR #23) → #3 (token protection, closed by PR #25) → #4 (audit, `[P1]`) → #6 (vertical slice and its amendment pass over #7-#10) → #7, #8, #9, #10 → #11. The guard, token and audit issues are preventive principles of spec §7 and ship **before** the tools they protect (`core/principles-need-backlog-items`).
+Order: #1 (host, closed by PR #13) → #5 (CI, closed by PR #16) → #2 (guards, closed by PR #23) → #3 (token protection, closed by PR #25) → #4 (audit, closed by PR #30) → #6 (vertical slice and its amendment pass over #7-#10) → #7, #8, #9, #10 → #11. The guard, token and audit issues are preventive principles of spec §7 and ship **before** the tools they protect (`core/principles-need-backlog-items`).
 
 ## How to write in this file
 
