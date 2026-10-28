@@ -27,6 +27,17 @@ public sealed class AuditEntryTests
     }
 
     [Fact]
+    public void Render_writes_every_id_in_the_order_guild_channel_role_message()
+    {
+        // Four distinct values, so a swap of any two adjacent slots changes the string. Without
+        // this case swapping the channel and role lines, or the role and message lines, left the
+        // whole suite green: no other case passes those pairs together.
+        string entry = AuditEntry.Render("set_channel_permissions", ToolLevel.Write, 111, 5001, 6001, 7001, AuditOutcome.Success);
+
+        Assert.Equal("tool=set_channel_permissions level=write guild=111 channel=5001 role=6001 message=7001 outcome=success", entry);
+    }
+
+    [Fact]
     public void Render_writes_a_refusal_with_its_error_code()
     {
         string entry = AuditEntry.Render("edit_role", ToolLevel.Write, 222, null, 6002, null, AuditOutcome.Failed(ErrorCode.ForbiddenGuild));
