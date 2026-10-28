@@ -168,6 +168,16 @@ public sealed class ServerStartupTests
     }
 
     [Fact]
+    public void ConfigureServices_does_not_keep_a_category_that_shares_only_part_of_the_audit_category_name()
+    {
+        using IHost host = BuildHost(Options(LogLevel.Error));
+
+        // A filter rule matches a category by prefix, so a rule spelling "Guildsmith.Audi" would
+        // keep this one too.
+        Assert.False(host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Guildsmith.Audio").IsEnabled(LogLevel.Information));
+    }
+
+    [Fact]
     public void ConfigureServices_serves_an_empty_tool_collection()
     {
         using IHost host = BuildHost(Options(LogLevel.Information));
