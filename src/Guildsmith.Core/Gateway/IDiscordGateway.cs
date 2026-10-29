@@ -16,7 +16,10 @@ namespace Guildsmith.Core.Gateway;
 /// </summary>
 public interface IDiscordGateway
 {
-    /// <summary>The guild the channel belongs to, or <see langword="null"/> when no such channel exists.</summary>
+    /// <summary>
+    /// The guild the channel belongs to, or <see langword="null"/> when no such channel exists or it
+    /// belongs to no guild (a DM or a group DM).
+    /// </summary>
     Task<ulong?> GetChannelGuildIdAsync(ulong channelId, CancellationToken cancellationToken);
 
     /// <summary>The guild the role belongs to, or <see langword="null"/> when no such role exists.</summary>
@@ -30,4 +33,36 @@ public interface IDiscordGateway
     /// <see cref="DiscordFailureException"/> with <see cref="Errors.ErrorCode.NotFound"/>.
     /// </summary>
     Task<GuildInfo> GetGuildInfoAsync(ulong guildId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// The channel <paramref name="channelId"/>, or <see langword="null"/> when no such channel exists
+    /// or it belongs to no guild (a DM or a group DM).
+    /// </summary>
+    Task<ChannelInfo?> GetChannelAsync(ulong channelId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Every channel of <paramref name="guildId"/>, of any type, in the order Discord returns them. A
+    /// guild Discord does not return is a <see cref="DiscordFailureException"/> with
+    /// <see cref="Errors.ErrorCode.NotFound"/>.
+    /// </summary>
+    Task<IReadOnlyList<ChannelInfo>> GetChannelsAsync(ulong guildId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Creates <paramref name="channel"/> in <paramref name="guildId"/> and returns it (Write). A guild
+    /// Discord does not return is a <see cref="DiscordFailureException"/> with <see cref="Errors.ErrorCode.NotFound"/>.
+    /// </summary>
+    Task<ChannelInfo> CreateChannelAsync(ulong guildId, NewChannel channel, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Changes the fields of <paramref name="edit"/> that are not <see langword="null"/> on the channel
+    /// <paramref name="channelId"/>, and leaves every other field as it is (Write). A channel Discord
+    /// does not return is a <see cref="DiscordFailureException"/> with <see cref="Errors.ErrorCode.NotFound"/>.
+    /// </summary>
+    Task<ChannelInfo> EditChannelAsync(ulong channelId, ChannelEdit edit, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Deletes the channel <paramref name="channelId"/> (Destructive). A channel Discord does not return
+    /// is a <see cref="DiscordFailureException"/> with <see cref="Errors.ErrorCode.NotFound"/>.
+    /// </summary>
+    Task DeleteChannelAsync(ulong channelId, CancellationToken cancellationToken);
 }

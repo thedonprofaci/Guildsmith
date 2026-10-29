@@ -130,12 +130,17 @@ public static class ServerStartup
         builder.Services.AddSingleton(services => new GuardPipeline(
             options, services.GetRequiredService<IDiscordGateway>(), services.GetRequiredService<ILoggerFactory>()));
         builder.Services.AddSingleton<GuildService>();
+        builder.Services.AddSingleton<ChannelService>();
 
         builder.Services
             .AddMcpServer()
             .WithStdioServerTransport()
             .WithTools<ListGuildsTool>()
-            .WithTools<GetGuildInfoTool>();
+            .WithTools<GetGuildInfoTool>()
+            .WithTools<ListChannelsTool>()
+            .WithTools<CreateChannelTool>()
+            .WithTools<EditChannelTool>()
+            .WithTools<DeleteChannelTool>();
     }
 
     /// <summary>
