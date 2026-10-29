@@ -31,10 +31,10 @@ public sealed class ToolRegistryTests
     }
 
     [Fact]
-    public void The_host_registers_exactly_the_two_server_tools()
+    public void The_host_registers_exactly_the_server_and_channel_tools()
     {
         // A tool that silently failed to register would leave the conformance test above green.
-        Assert.Equal(["get_guild_info", "list_guilds"], RegisteredTools().Select(tool => tool.ProtocolTool.Name).Order(StringComparer.Ordinal));
+        Assert.Equal(["create_channel", "delete_channel", "edit_channel", "get_guild_info", "list_channels", "list_guilds"], RegisteredTools().Select(tool => tool.ProtocolTool.Name).Order(StringComparer.Ordinal));
     }
 
     [Theory]

@@ -48,6 +48,14 @@ public sealed class DiscordRestApi : IDiscordRestApi, IDisposable
         return await client.GetGuildAsync(guildId, withCounts: true, options).ConfigureAwait(false);
     }
 
+    /// <inheritdoc />
+    public async Task<IChannel?> GetChannelAsync(ulong channelId, RequestOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        DiscordRestClient client = await LoggedInClientAsync(options.CancelToken).ConfigureAwait(false);
+        return await client.GetChannelAsync(channelId, options).ConfigureAwait(false);
+    }
+
     /// <summary>Disposes the client, if one was logged in.</summary>
     public void Dispose()
     {

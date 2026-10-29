@@ -183,14 +183,14 @@ public sealed class ServerStartupTests
     }
 
     [Fact]
-    public void ConfigureServices_serves_exactly_the_two_server_tools()
+    public void ConfigureServices_serves_exactly_the_server_and_channel_tools()
     {
         using IHost host = BuildHost(Options(LogLevel.Information));
 
         McpServerPrimitiveCollection<McpServerTool>? tools =
             host.Services.GetRequiredService<IOptions<McpServerOptions>>().Value.ToolCollection;
         Assert.NotNull(tools);
-        Assert.Equal(["get_guild_info", "list_guilds"], tools.Select(tool => tool.ProtocolTool.Name).Order(StringComparer.Ordinal));
+        Assert.Equal(["create_channel", "delete_channel", "edit_channel", "get_guild_info", "list_channels", "list_guilds"], tools.Select(tool => tool.ProtocolTool.Name).Order(StringComparer.Ordinal));
     }
 
     [Fact]

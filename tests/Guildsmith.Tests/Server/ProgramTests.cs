@@ -29,7 +29,7 @@ public sealed class ProgramTests
     };
 
     [Fact]
-    public async Task RunAsync_lists_the_server_tools_to_an_sdk_stdio_client_without_logging_in_to_discord()
+    public async Task RunAsync_lists_the_server_and_channel_tools_to_an_sdk_stdio_client_without_logging_in_to_discord()
     {
         using CancellationTokenSource cancel = new(s_timeout);
         List<string> stderr = [];
@@ -54,7 +54,7 @@ public sealed class ProgramTests
             tools = await client.ListToolsAsync(new RequestOptions(), cancel.Token);
         }
 
-        Assert.Equal(["get_guild_info", "list_guilds"], tools.Select(tool => tool.Name).Order(StringComparer.Ordinal));
+        Assert.Equal(["create_channel", "delete_channel", "edit_channel", "get_guild_info", "list_channels", "list_guilds"], tools.Select(tool => tool.Name).Order(StringComparer.Ordinal));
         lock (stderr)
         {
             // The server did log (the lifetime and transport lines), so the absences below are
@@ -96,7 +96,7 @@ public sealed class ProgramTests
         StreamClientTransport transport = new(server.StandardInput.BaseStream, toClient.Reader.AsStream(), NullLoggerFactory.Instance);
         await using (McpClient client = await McpClient.CreateAsync(transport, new McpClientOptions(), NullLoggerFactory.Instance, cancel.Token))
         {
-            Assert.Equal(2, (await client.ListToolsAsync(new RequestOptions(), cancel.Token)).Count);
+            Assert.Equal(6, (await client.ListToolsAsync(new RequestOptions(), cancel.Token)).Count);
         }
 
         server.StandardInput.Close();
