@@ -75,7 +75,46 @@ public sealed class GuardPipeline
         ArgumentNullException.ThrowIfNull(target);
         ArgumentNullException.ThrowIfNull(operation);
 
-        return await ExecuteAsync(toolName, level, ids => GuardAndRunAsync(level, target, operation, ids, cancellationToken), cancellationToken)
+        return await ExecuteAsync(
+                toolName,
+                level,
+                ids => GuardAndRunAsync(
+                    level,
+                    target,
+                    async (gateway, guarded, token) => ToolResult<T>.Success(await operation(gateway, guarded, token).ConfigureAwait(false)),
+                    ids,
+                    cancellationToken),
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// <see cref="RunAsync{T}"/> for a tool whose arguments can be wrong beyond their IDs. A non-null
+    /// <paramref name="argumentError"/> is the call's result before anything else happens: no guard
+    /// runs and the gateway is not asked anything, not even to resolve the target's guild. Otherwise
+    /// the call is guarded exactly as by <see cref="RunAsync{T}"/>, and <paramref name="operation"/>
+    /// may itself return a failure, for a check that needs the gateway (such as whether a
+    /// <c>parent_id</c> is a category of the same guild). Either failure is audited like a refusal.
+    /// </summary>
+    public async Task<ToolResult<T>> RunCheckedAsync<T>(
+        string toolName,
+        ToolLevel level,
+        ToolTarget target,
+        ToolError? argumentError,
+        Func<IDiscordGateway, GuardedTarget, CancellationToken, Task<ToolResult<T>>> operation,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(toolName);
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentNullException.ThrowIfNull(operation);
+
+        return await ExecuteAsync(
+                toolName,
+                level,
+                ids => argumentError is not null
+                    ? Task.FromResult(ToolResult<T>.Failure(argumentError))
+                    : GuardAndRunAsync(level, target, operation, ids, cancellationToken),
+                cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -169,7 +208,7 @@ public sealed class GuardPipeline
     private async Task<ToolResult<T>> GuardAndRunAsync<T>(
         ToolLevel level,
         ToolTarget target,
-        Func<IDiscordGateway, GuardedTarget, CancellationToken, Task<T>> operation,
+        Func<IDiscordGateway, GuardedTarget, CancellationToken, Task<ToolResult<T>>> operation,
         AuditIds ids,
         CancellationToken cancellationToken)
     {
@@ -191,8 +230,7 @@ public sealed class GuardPipeline
             return ToolResult<T>.Failure(refusal);
         }
 
-        T value = await operation(_gateway, guarded, cancellationToken).ConfigureAwait(false);
-        return ToolResult<T>.Success(value);
+        return await operation(_gateway, guarded, cancellationToken).ConfigureAwait(false);
     }
 
     // Every argument is parsed before the gateway is asked anything, so a malformed ID costs no

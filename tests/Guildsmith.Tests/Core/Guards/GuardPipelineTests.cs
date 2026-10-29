@@ -1019,7 +1019,124 @@ public sealed class GuardPipelineTests
         await Assert.ThrowsAsync<ArgumentNullException>(() => pipeline.RunUnscopedAsync<string>("test_tool", ToolLevel.Read, null!));
     }
 
+    // ---- the checked form (issue #7): an argument error first, and an operation that can fail ----
+
+    [Fact]
+    public async Task RunCheckedAsync_returns_the_argument_error_before_resolving_the_channel_or_running_the_operation()
+    {
+        ToolError argumentError = new(ErrorCode.InvalidArgument, "wrong argument");
+
+        ToolResult<string> result = await new GuardPipeline(Options(BothGuilds, DiscordMcpMode.ReadWrite, false), _gateway)
+            .RunCheckedAsync("test_tool", ToolLevel.Write, ToolTarget.Channel("5001"), argumentError, CheckedOperation, _token);
+
+        Assert.Same(argumentError, result.Error);
+        Assert.False(_invoked);
+        Assert.Empty(_gateway.ReceivedCalls());
+    }
+
+    [Fact]
+    public async Task RunCheckedAsync_returns_the_argument_error_ahead_of_a_refusal_the_guards_would_give()
+    {
+        // ReadOnly mode would refuse this Write call; the argument error is answered first.
+        ToolResult<string> result = await new GuardPipeline(Options(BothGuilds, DiscordMcpMode.ReadOnly, false), _gateway)
+            .RunCheckedAsync("test_tool", ToolLevel.Write, ToolTarget.Guild("111"), new ToolError(ErrorCode.InvalidArgument, "wrong"), CheckedOperation, _token);
+
+        Assert.Equal(ErrorCode.InvalidArgument, result.Error!.Code);
+    }
+
+    [Fact]
+    public async Task RunCheckedAsync_hands_the_gateway_the_resolved_target_and_the_token_to_the_operation_when_there_is_no_argument_error()
+    {
+        ToolResult<string> result = await new GuardPipeline(Options(BothGuilds, DiscordMcpMode.ReadWrite, false), _gateway)
+            .RunCheckedAsync("test_tool", ToolLevel.Write, ToolTarget.Channel("5001"), null, CheckedOperation, _token);
+
+        Assert.Equal("done", result.Value);
+        Assert.Same(_gateway, _operationGateway);
+        Assert.Equal(new GuardedTarget(GuildA, ChannelInA, null, null), _operationTarget);
+        Assert.Equal(_token, _operationToken);
+    }
+
+    [Fact]
+    public async Task RunCheckedAsync_still_applies_the_guards_when_there_is_no_argument_error()
+    {
+        ToolResult<string> result = await new GuardPipeline(Options(BothGuilds, DiscordMcpMode.ReadWrite, false), _gateway)
+            .RunCheckedAsync("test_tool", ToolLevel.Write, ToolTarget.Channel("5009"), null, CheckedOperation, _token);
+
+        AssertRefused(result, ErrorCode.ForbiddenGuild);
+    }
+
+    [Fact]
+    public async Task RunCheckedAsync_returns_the_failure_the_operation_returns()
+    {
+        ToolError failure = new(ErrorCode.InvalidArgument, "parent is not a category");
+
+        ToolResult<string> result = await new GuardPipeline(Options(BothGuilds, DiscordMcpMode.ReadWrite, false), _gateway)
+            .RunCheckedAsync("test_tool", ToolLevel.Write, ToolTarget.Guild("111"), null,
+                (_, _, _) => Task.FromResult(ToolResult<string>.Failure(failure)), _token);
+
+        Assert.Same(failure, result.Error);
+    }
+
+    [Fact]
+    public async Task RunCheckedAsync_audits_an_argument_error_as_a_failed_call_with_no_ids()
+    {
+        using StringWriter log = new();
+        GuildsmithOptions options = AuditOptions(DiscordMcpMode.ReadWrite, false);
+        HostApplicationBuilder builder = Host.CreateEmptyApplicationBuilder(new HostApplicationBuilderSettings());
+        ServerStartup.ConfigureServices(builder, options, log);
+        using IHost host = builder.Build();
+
+        await new GuardPipeline(options, _gateway, host.Services.GetRequiredService<ILoggerFactory>())
+            .RunCheckedAsync(AuditedTool, ToolLevel.Write, ToolTarget.Channel("5001"), new ToolError(ErrorCode.InvalidArgument, "wrong"), CheckedOperation, _token);
+
+        Assert.Equal(["tool=audited_tool level=write outcome=invalid_argument"], AuditEntries(log));
+    }
+
+    [Fact]
+    public async Task RunCheckedAsync_audits_the_operations_failure_with_its_code()
+    {
+        using StringWriter log = new();
+        GuildsmithOptions options = AuditOptions(DiscordMcpMode.ReadWrite, false);
+        HostApplicationBuilder builder = Host.CreateEmptyApplicationBuilder(new HostApplicationBuilderSettings());
+        ServerStartup.ConfigureServices(builder, options, log);
+        using IHost host = builder.Build();
+
+        await new GuardPipeline(options, _gateway, host.Services.GetRequiredService<ILoggerFactory>())
+            .RunCheckedAsync(AuditedTool, ToolLevel.Write, ToolTarget.Channel("5001"), null,
+                (_, _, _) => Task.FromResult(ToolResult<string>.Failure(new ToolError(ErrorCode.InvalidArgument, "wrong"))), _token);
+
+        Assert.Equal(["tool=audited_tool level=write guild=111 channel=5001 outcome=invalid_argument"], AuditEntries(log));
+    }
+
+    [Fact]
+    public async Task RunCheckedAsync_rejects_a_blank_tool_name()
+    {
+        GuardPipeline pipeline = new(Options(BothGuilds, DiscordMcpMode.ReadWrite, false), _gateway);
+
+        await Assert.ThrowsAsync<ArgumentException>(() => pipeline.RunCheckedAsync(" ", ToolLevel.Read, ToolTarget.Guild("111"), null, CheckedOperation));
+    }
+
+    [Fact]
+    public async Task RunCheckedAsync_rejects_a_null_target()
+    {
+        GuardPipeline pipeline = new(Options(BothGuilds, DiscordMcpMode.ReadWrite, false), _gateway);
+
+        await Assert.ThrowsAsync<ArgumentNullException>(() => pipeline.RunCheckedAsync("test_tool", ToolLevel.Read, null!, null, CheckedOperation));
+    }
+
+    [Fact]
+    public async Task RunCheckedAsync_rejects_a_null_operation()
+    {
+        GuardPipeline pipeline = new(Options(BothGuilds, DiscordMcpMode.ReadWrite, false), _gateway);
+
+        await Assert.ThrowsAsync<ArgumentNullException>(
+            () => pipeline.RunCheckedAsync<string>("test_tool", ToolLevel.Read, ToolTarget.Guild("111"), null, null!));
+    }
+
     // ---- helpers ----
+
+    private async Task<ToolResult<string>> CheckedOperation(IDiscordGateway gateway, GuardedTarget target, CancellationToken cancellationToken) =>
+        ToolResult<string>.Success(await Operation(gateway, target, cancellationToken));
 
     private Task<ToolResult<string>> RunUnscoped(GuildsmithOptions options, ToolLevel level) =>
         new GuardPipeline(options, _gateway).RunUnscopedAsync("test_tool", level, UnscopedOperation, _token);
