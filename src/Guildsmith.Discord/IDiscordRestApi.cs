@@ -18,4 +18,10 @@ public interface IDiscordRestApi
     /// (<c>GET /guilds/{id}?with_counts=true</c>), or <see langword="null"/> when Discord answers 404.
     /// </summary>
     Task<IGuild?> GetGuildAsync(ulong guildId, RequestOptions options);
+
+    /// <summary>
+    /// The channel <paramref name="channelId"/>, of any kind, guild channel or not (<c>GET /channels/{id}</c>),
+    /// or <see langword="null"/> when Discord answers 404.
+    /// </summary>
+    Task<IChannel?> GetChannelAsync(ulong channelId, RequestOptions options);
 }

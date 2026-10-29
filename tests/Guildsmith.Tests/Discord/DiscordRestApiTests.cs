@@ -74,6 +74,29 @@ public sealed class DiscordRestApiTests
     }
 
     [Fact]
+    public async Task GetChannelAsync_logs_in_then_asks_for_the_channel_and_returns_it_as_a_guild_text_channel()
+    {
+        _rest.Respond("channels/5001", HttpStatusCode.OK,
+            """{"id":"5001","type":0,"guild_id":"7","name":"general","position":1,"parent_id":"900","permission_overwrites":[],"nsfw":false}""");
+        using DiscordRestApi api = Api();
+
+        IChannel? channel = await api.GetChannelAsync(5001, new RequestOptions());
+
+        Assert.Equal([.. s_login, "GET channels/5001"], _rest.Requests);
+        ITextChannel text = Assert.IsAssignableFrom<ITextChannel>(channel);
+        Assert.Equal((5001UL, 7UL, "general", (ulong?)900), (text.Id, text.GuildId, text.Name, text.CategoryId));
+    }
+
+    [Fact]
+    public async Task GetChannelAsync_returns_null_for_a_channel_discord_answers_404()
+    {
+        _rest.Respond("channels/5404", HttpStatusCode.NotFound, """{"message":"Unknown Channel","code":10003}""");
+        using DiscordRestApi api = Api();
+
+        Assert.Null(await api.GetChannelAsync(5404, new RequestOptions()));
+    }
+
+    [Fact]
     public async Task GetGuildSummariesAsync_returns_every_joined_guild_from_users_me_guilds()
     {
         using DiscordRestApi api = Api();
