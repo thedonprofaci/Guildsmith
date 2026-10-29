@@ -188,6 +188,19 @@ public sealed class CreateChannelToolTests : IDisposable
     }
 
     [Fact]
+    public async Task CreateChannelAsync_hands_the_given_parent_topic_and_position_to_the_creation_properties()
+    {
+        CallToolResult result = await Tool(DiscordMcpMode.ReadWrite).CreateChannelAsync(
+            CancellationToken.None, "new", "text", "111", parent_id: "900", topic: "Welcome aboard", position: 6);
+
+        Assert.False(result.IsError);
+        TextChannelProperties properties = CreationProperties();
+        Assert.Equal((true, (ulong?)900), (properties.CategoryId.IsSpecified, properties.CategoryId.GetValueOrDefault()));
+        Assert.Equal((true, "Welcome aboard"), (properties.Topic.IsSpecified, properties.Topic.GetValueOrDefault()));
+        Assert.Equal((true, 6), (properties.Position.IsSpecified, properties.Position.GetValueOrDefault()));
+    }
+
+    [Fact]
     public async Task CreateChannelAsync_hands_the_callers_token_down_to_the_creation_request()
     {
         using CancellationTokenSource cancel = new();
@@ -234,6 +247,14 @@ public sealed class CreateChannelToolTests : IDisposable
     // these are exactly the creation calls.
     private IEnumerable<string> CreationCalls() =>
         _guild.ReceivedCalls().Select(call => call.GetMethodInfo().Name);
+
+    // The properties the single creation call on the guild would send: its callback, run on a fresh object.
+    private TextChannelProperties CreationProperties()
+    {
+        TextChannelProperties properties = new();
+        ((Action<TextChannelProperties>)Assert.Single(_guild.ReceivedCalls()).GetArguments()[1]!)(properties);
+        return properties;
+    }
 
     private T Nested<T>(ulong id, ulong guildId, string name, ulong? parentId, int position)
         where T : class, INestedChannel
