@@ -81,6 +81,18 @@ public sealed class ListGuildsToolTests
         Assert.Equal("""[{"id":"111","name":"Alpha"}]""", Text(result));
     }
 
+    [Fact]
+    public async Task ListGuildsAsync_hands_the_callers_token_down_to_the_discord_request()
+    {
+        using CancellationTokenSource cancel = new();
+        IUserGuild[] joined = [UserGuild(111, "Alpha")];
+        _api.GetGuildSummariesAsync(Arg.Any<RequestOptions>()).Returns(joined);
+
+        await Tool(DiscordMcpMode.ReadWrite, 111).ListGuildsAsync(cancel.Token);
+
+        await _api.Received(1).GetGuildSummariesAsync(Arg.Is<RequestOptions>(options => options.CancelToken == cancel.Token));
+    }
+
     private ListGuildsTool Tool(DiscordMcpMode mode, params ulong[] allowed)
     {
         GuildsmithOptions options = new()

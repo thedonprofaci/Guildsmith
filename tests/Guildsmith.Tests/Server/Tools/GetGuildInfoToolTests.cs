@@ -86,6 +86,17 @@ public sealed class GetGuildInfoToolTests
         Assert.False(result.IsError);
     }
 
+    [Fact]
+    public async Task GetGuildInfoAsync_hands_the_callers_token_down_to_the_discord_request()
+    {
+        using CancellationTokenSource cancel = new();
+        Guild(111, "Alpha", memberCount: 1, channelCount: 2, roleCount: 3);
+
+        await Tool(DiscordMcpMode.ReadWrite, 111).GetGuildInfoAsync(cancel.Token, "111");
+
+        await _api.Received(1).GetGuildAsync(111, Arg.Is<RequestOptions>(options => options.CancelToken == cancel.Token));
+    }
+
     private GetGuildInfoTool Tool(DiscordMcpMode mode, params ulong[] allowed)
     {
         GuildsmithOptions options = new()
