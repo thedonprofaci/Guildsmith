@@ -212,6 +212,50 @@ public sealed class EditChannelToolTests
         Assert.Single(Modifications(_text));
     }
 
+    // ---- each field given alone reaches the properties ModifyAsync applies ----
+    // With a field dropped on its way down, the empty-edit check refuses the call, so the refusal
+    // tests above stay green; only a successful call shows the value arrived.
+
+    [Fact]
+    public async Task EditChannelAsync_hands_the_given_topic_to_the_modify_properties()
+    {
+        CallToolResult result = await Tool(DiscordMcpMode.ReadWrite).EditChannelAsync(CancellationToken.None, "5001", topic: "Patch notes only");
+
+        Assert.False(result.IsError);
+        TextChannelProperties properties = AppliedProperties(_text);
+        Assert.Equal((true, "Patch notes only"), (properties.Topic.IsSpecified, properties.Topic.GetValueOrDefault()));
+    }
+
+    [Fact]
+    public async Task EditChannelAsync_hands_the_given_position_to_the_modify_properties()
+    {
+        CallToolResult result = await Tool(DiscordMcpMode.ReadWrite).EditChannelAsync(CancellationToken.None, "5001", position: 6);
+
+        Assert.False(result.IsError);
+        TextChannelProperties properties = AppliedProperties(_text);
+        Assert.Equal((true, 6), (properties.Position.IsSpecified, properties.Position.GetValueOrDefault()));
+    }
+
+    [Fact]
+    public async Task EditChannelAsync_hands_the_given_slow_mode_to_the_modify_properties()
+    {
+        CallToolResult result = await Tool(DiscordMcpMode.ReadWrite).EditChannelAsync(CancellationToken.None, "5001", slowmode_seconds: 45);
+
+        Assert.False(result.IsError);
+        TextChannelProperties properties = AppliedProperties(_text);
+        Assert.Equal((true, 45), (properties.SlowModeInterval.IsSpecified, properties.SlowModeInterval.GetValueOrDefault()));
+    }
+
+    [Fact]
+    public async Task EditChannelAsync_hands_the_given_nsfw_flag_to_the_modify_properties()
+    {
+        CallToolResult result = await Tool(DiscordMcpMode.ReadWrite).EditChannelAsync(CancellationToken.None, "5001", nsfw: true);
+
+        Assert.False(result.IsError);
+        TextChannelProperties properties = AppliedProperties(_text);
+        Assert.Equal((true, true), (properties.IsNsfw.IsSpecified, properties.IsNsfw.GetValueOrDefault()));
+    }
+
     private EditChannelTool Tool(DiscordMcpMode mode)
     {
         GuildsmithOptions options = new()
@@ -230,6 +274,14 @@ public sealed class EditChannelToolTests
 
     private static IEnumerable<NSubstitute.Core.ICall> Modifications(IGuildChannel channel) =>
         channel.ReceivedCalls().Where(call => call.GetMethodInfo().Name == nameof(IGuildChannel.ModifyAsync));
+
+    // The properties the single ModifyAsync call on channel would send: its callback, run on a fresh object.
+    private static TextChannelProperties AppliedProperties(ITextChannel channel)
+    {
+        TextChannelProperties properties = new();
+        ((Action<TextChannelProperties>)Assert.Single(Modifications(channel)).GetArguments()[0]!)(properties);
+        return properties;
+    }
 
     private T Nested<T>(ulong id, ulong guildId, string name, ulong? parentId, int position)
         where T : class, INestedChannel
