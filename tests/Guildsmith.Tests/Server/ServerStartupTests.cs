@@ -1,4 +1,9 @@
 using Guildsmith.Core.Configuration;
+using Guildsmith.Core.Errors;
+using Guildsmith.Core.Gateway;
+using Guildsmith.Core.Guards;
+using Guildsmith.Core.Services;
+using Guildsmith.Discord;
 using Guildsmith.Server;
 using Guildsmith.Server.Logging;
 
@@ -178,14 +183,69 @@ public sealed class ServerStartupTests
     }
 
     [Fact]
-    public void ConfigureServices_serves_an_empty_tool_collection()
+    public void ConfigureServices_serves_exactly_the_two_server_tools()
     {
         using IHost host = BuildHost(Options(LogLevel.Information));
 
         McpServerPrimitiveCollection<McpServerTool>? tools =
             host.Services.GetRequiredService<IOptions<McpServerOptions>>().Value.ToolCollection;
         Assert.NotNull(tools);
-        Assert.Empty(tools);
+        Assert.Equal(["get_guild_info", "list_guilds"], tools.Select(tool => tool.ProtocolTool.Name).Order(StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public async Task ConfigureServices_builds_a_pipeline_that_audits_a_write_to_stderr_and_writes_nothing_to_stdout()
+    {
+        // The two-argument GuardPipeline constructor logs nothing: a registration using it drops
+        // this audit entry, and the test goes red.
+        StringWriter stderr = new();
+        StringWriter stdout = new();
+        TextWriter original = Console.Out;
+        Console.SetOut(stdout);
+        try
+        {
+            using IHost host = BuildHost(Options(LogLevel.Information), stderr);
+
+            ToolResult<string> result = await host.Services.GetRequiredService<GuardPipeline>().RunAsync(
+                "fake_write", ToolLevel.Write, ToolTarget.Guild("1"), (_, _, _) => Task.FromResult("written"));
+
+            Assert.Equal("written", result.Value);
+        }
+        finally
+        {
+            Console.SetOut(original);
+        }
+
+        Assert.Contains("Information: Guildsmith.Audit[0]\n      tool=fake_write level=write guild=1 outcome=success\n", stderr.ToString(), StringComparison.Ordinal);
+        Assert.Equal("", stdout.ToString());
+    }
+
+    [Fact]
+    public void ConfigureServices_registers_one_pipeline_instance_over_the_registered_gateway()
+    {
+        using IHost host = BuildHost(Options(LogLevel.Information));
+
+        Assert.Same(host.Services.GetRequiredService<GuardPipeline>(), host.Services.GetRequiredService<GuardPipeline>());
+        Assert.IsType<DiscordGateway>(host.Services.GetRequiredService<IDiscordGateway>());
+        Assert.IsType<DiscordRestApi>(host.Services.GetRequiredService<IDiscordRestApi>());
+        Assert.NotNull(host.Services.GetRequiredService<GuildService>());
+    }
+
+    [Fact]
+    public async Task Starting_and_stopping_the_host_makes_no_discord_call()
+    {
+        IDiscordRestApi api = Substitute.For<IDiscordRestApi>();
+        HostApplicationBuilder builder = Host.CreateEmptyApplicationBuilder(new HostApplicationBuilderSettings());
+        ServerStartup.ConfigureServices(builder, Options(LogLevel.Information), TextWriter.Null);
+        builder.Services.AddSingleton(api);
+        using IHost host = builder.Build();
+
+        await host.StartAsync();
+        _ = host.Services.GetRequiredService<GuildService>();
+        await host.StopAsync();
+
+        Assert.Same(api, host.Services.GetRequiredService<IDiscordRestApi>());
+        Assert.Empty(api.ReceivedCalls());
     }
 
     [Fact]

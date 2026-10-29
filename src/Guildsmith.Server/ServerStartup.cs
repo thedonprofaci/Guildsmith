@@ -1,7 +1,14 @@
+using Discord.Rest;
+
 using Guildsmith.Core.Audit;
 using Guildsmith.Core.Configuration;
+using Guildsmith.Core.Gateway;
+using Guildsmith.Core.Guards;
 using Guildsmith.Core.Security;
+using Guildsmith.Core.Services;
+using Guildsmith.Discord;
 using Guildsmith.Server.Logging;
+using Guildsmith.Server.Tools;
 
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -98,7 +105,8 @@ public static class ServerStartup
     /// <summary>
     /// Registers the validated options, logging to <paramref name="stderr"/> through the
     /// redacting provider only, with the audit category kept at <see cref="LogLevel.Information"/>
-    /// whatever the minimum level is, and the MCP server with no tools.
+    /// whatever the minimum level is, the Discord gateway (which logs in on its first call, not here),
+    /// the guard pipeline, the services, and the MCP server with its tools.
     /// </summary>
     public static void ConfigureServices(HostApplicationBuilder builder, GuildsmithOptions options, TextWriter stderr)
     {
@@ -113,11 +121,21 @@ public static class ServerStartup
         // set it to Error to quiet the server must still see every write the server made.
         builder.Logging.AddFilter(AuditEntry.Category, LogLevel.Information);
 
-        // An empty tool collection, not none: without one the server does not advertise the
-        // tools capability, and tools/list fails with "Method 'tools/list' is not available".
+        builder.Services.AddSingleton<IDiscordRestApi>(services =>
+            new DiscordRestApi(options.DiscordToken, new DiscordRestConfig(), services.GetRequiredService<ILogger<DiscordRestApi>>()));
+        builder.Services.AddSingleton<IDiscordGateway, DiscordGateway>();
+
+        // The logger factory constructor: the two-argument one logs nothing, so a pipeline built
+        // with it would drop every audit entry and every internal_error detail without a sign.
+        builder.Services.AddSingleton(services => new GuardPipeline(
+            options, services.GetRequiredService<IDiscordGateway>(), services.GetRequiredService<ILoggerFactory>()));
+        builder.Services.AddSingleton<GuildService>();
+
         builder.Services
-            .AddMcpServer(server => server.ToolCollection = [])
-            .WithStdioServerTransport();
+            .AddMcpServer()
+            .WithStdioServerTransport()
+            .WithTools<ListGuildsTool>()
+            .WithTools<GetGuildInfoTool>();
     }
 
     /// <summary>

@@ -29,7 +29,7 @@ public sealed class ProgramTests
     };
 
     [Fact]
-    public async Task RunAsync_lists_no_tools_to_an_sdk_stdio_client()
+    public async Task RunAsync_lists_the_server_tools_to_an_sdk_stdio_client_without_logging_in_to_discord()
     {
         using CancellationTokenSource cancel = new(s_timeout);
         List<string> stderr = [];
@@ -54,13 +54,16 @@ public sealed class ProgramTests
             tools = await client.ListToolsAsync(new RequestOptions(), cancel.Token);
         }
 
-        Assert.Empty(tools);
+        Assert.Equal(["get_guild_info", "list_guilds"], tools.Select(tool => tool.Name).Order(StringComparer.Ordinal));
         lock (stderr)
         {
-            // The server did log (the lifetime and transport lines), so the absence below is
+            // The server did log (the lifetime and transport lines), so the absences below are
             // measured on real stderr output, not on an empty capture.
             Assert.Contains(stderr, line => line.Contains("Hosting environment: Production", StringComparison.Ordinal));
             Assert.DoesNotContain(stderr, line => line.Contains(ServerProcess.FakeToken, StringComparison.Ordinal));
+
+            // Startup and tools/list never log in: the fake token would fail the login.
+            Assert.DoesNotContain(stderr, line => line.Contains("Logging in to Discord", StringComparison.Ordinal));
         }
     }
 
@@ -93,7 +96,7 @@ public sealed class ProgramTests
         StreamClientTransport transport = new(server.StandardInput.BaseStream, toClient.Reader.AsStream(), NullLoggerFactory.Instance);
         await using (McpClient client = await McpClient.CreateAsync(transport, new McpClientOptions(), NullLoggerFactory.Instance, cancel.Token))
         {
-            Assert.Empty(await client.ListToolsAsync(new RequestOptions(), cancel.Token));
+            Assert.Equal(2, (await client.ListToolsAsync(new RequestOptions(), cancel.Token)).Count);
         }
 
         server.StandardInput.Close();
