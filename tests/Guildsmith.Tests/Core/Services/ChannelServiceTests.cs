@@ -169,6 +169,67 @@ public sealed class ChannelServiceTests
         await _gateway.Received(1).EditChannelAsync(ChannelInA, new ChannelEdit("renamed", "Topic", CategoryInA, 2, 30, true), _token);
     }
 
+    // Each field alone is enough for a call: none of them is mistaken for "no field given".
+
+    [Fact]
+    public async Task EditChannelAsync_accepts_a_call_giving_only_the_name()
+    {
+        await Service().EditChannelAsync("edit_channel", ToolLevel.Write, "5001", "renamed", null, null, null, null, null, _token);
+
+        await _gateway.Received(1).EditChannelAsync(ChannelInA, new ChannelEdit("renamed", null, null, null, null, null), _token);
+    }
+
+    [Fact]
+    public async Task EditChannelAsync_accepts_a_call_giving_only_the_topic()
+    {
+        await Service().EditChannelAsync("edit_channel", ToolLevel.Write, "5001", null, "Topic", null, null, null, null, _token);
+
+        await _gateway.Received(1).EditChannelAsync(ChannelInA, new ChannelEdit(null, "Topic", null, null, null, null), _token);
+    }
+
+    [Fact]
+    public async Task EditChannelAsync_accepts_a_call_giving_only_the_parent()
+    {
+        await Service().EditChannelAsync("edit_channel", ToolLevel.Write, "5001", null, null, "900", null, null, null, _token);
+
+        await _gateway.Received(1).EditChannelAsync(ChannelInA, new ChannelEdit(null, null, CategoryInA, null, null, null), _token);
+    }
+
+    [Fact]
+    public async Task EditChannelAsync_accepts_a_call_giving_only_the_position()
+    {
+        await Service().EditChannelAsync("edit_channel", ToolLevel.Write, "5001", null, null, null, 0, null, null, _token);
+
+        await _gateway.Received(1).EditChannelAsync(ChannelInA, new ChannelEdit(null, null, null, 0, null, null), _token);
+    }
+
+    [Fact]
+    public async Task EditChannelAsync_accepts_a_call_giving_only_the_slow_mode()
+    {
+        await Service().EditChannelAsync("edit_channel", ToolLevel.Write, "5001", null, null, null, null, 0, null, _token);
+
+        await _gateway.Received(1).EditChannelAsync(ChannelInA, new ChannelEdit(null, null, null, null, 0, null), _token);
+    }
+
+    [Fact]
+    public async Task EditChannelAsync_accepts_a_call_giving_only_the_nsfw_flag()
+    {
+        await Service().EditChannelAsync("edit_channel", ToolLevel.Write, "5001", null, null, null, null, null, false, _token);
+
+        await _gateway.Received(1).EditChannelAsync(ChannelInA, new ChannelEdit(null, null, null, null, null, false), _token);
+    }
+
+    [Fact]
+    public async Task EditChannelAsync_refuses_a_call_giving_no_field_with_invalid_argument_listing_the_fields_and_no_gateway_call()
+    {
+        ToolResult<ChannelInfo> result =
+            await Service().EditChannelAsync("edit_channel", ToolLevel.Write, "5001", null, null, null, null, null, null, _token);
+
+        Assert.Equal(ErrorCode.InvalidArgument, result.Error!.Code);
+        Assert.Equal(["name", "topic", "parent_id", "position", "slowmode_seconds", "nsfw"], result.Error.ValidValues);
+        Assert.Empty(_gateway.ReceivedCalls());
+    }
+
     [Fact]
     public async Task EditChannelAsync_hands_the_callers_token_to_the_channel_lookup()
     {

@@ -208,6 +208,17 @@ public sealed class DiscordRestApiTests
         Assert.Empty(_rest.Requests);
     }
 
+    [Fact]
+    public async Task A_channel_call_waiting_for_the_login_honours_its_cancellation_token()
+    {
+        using DiscordRestApi api = Api();
+        using CancellationTokenSource cancel = new();
+        cancel.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => api.GetChannelAsync(5001, new RequestOptions { CancelToken = cancel.Token }));
+        Assert.Empty(_rest.Requests);
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]
