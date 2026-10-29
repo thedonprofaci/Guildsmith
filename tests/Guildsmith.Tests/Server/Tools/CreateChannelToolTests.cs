@@ -230,8 +230,10 @@ public sealed class CreateChannelToolTests : IDisposable
         LogLevel = LogLevel.Information,
     };
 
+    // Every call the guild received. The gateway asks the guild for nothing but the creation, so
+    // these are exactly the creation calls.
     private IEnumerable<string> CreationCalls() =>
-        _guild.ReceivedCalls().Select(call => call.GetMethodInfo().Name).Where(name => name.StartsWith("Create", StringComparison.Ordinal));
+        _guild.ReceivedCalls().Select(call => call.GetMethodInfo().Name);
 
     private T Nested<T>(ulong id, ulong guildId, string name, ulong? parentId, int position)
         where T : class, INestedChannel
