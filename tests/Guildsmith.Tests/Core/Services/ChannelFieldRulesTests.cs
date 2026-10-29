@@ -49,6 +49,12 @@ public sealed class ChannelFieldRulesTests
     }
 
     [Fact]
+    public void FirstUnsupported_names_the_first_given_field_when_that_field_itself_is_unsupported()
+    {
+        Assert.Equal("topic", ChannelFieldRules.FirstUnsupported(ChannelKind.Category, ["topic", "nsfw"]));
+    }
+
+    [Fact]
     public void FirstUnsupported_is_null_when_the_kind_carries_every_given_field()
     {
         Assert.Null(ChannelFieldRules.FirstUnsupported(ChannelKind.Voice, ["name", "parent_id", "nsfw", "slowmode_seconds"]));
