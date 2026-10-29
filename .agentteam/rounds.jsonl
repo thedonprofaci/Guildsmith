@@ -43,3 +43,6 @@
 {"at":"2026-10-29T08:46:16Z","issue":7,"pr":null,"role":"manager","phase":"work order","fix_round":0,"model":"inherit","effort":"inherit","tokens":59504,"tool_uses":9}
 {"at":"2026-10-29T10:10:55Z","issue":7,"pr":34,"role":"developer","phase":"implementation","fix_round":0,"model":"inherit","effort":"inherit","tokens":296209,"tool_uses":109}
 {"at":"2026-10-29T10:19:04Z","issue":7,"pr":34,"role":"tester","phase":"review","fix_round":0,"model":"inherit","effort":"inherit","tokens":143223,"tool_uses":47}
+{"at":"2026-10-29T10:23:28Z","issue":7,"pr":34,"role":"manager","phase":"decision","fix_round":0,"model":"inherit","effort":"inherit","tokens":78361,"tool_uses":21}
+{"at":"2026-10-29T10:29:31Z","issue":7,"pr":34,"role":"developer","phase":"fix","fix_round":1,"model":"inherit","effort":"inherit","tokens":114258,"tool_uses":37}
+{"at":"2026-10-29T10:32:10Z","issue":7,"pr":34,"role":"tester","phase":"re-review","fix_round":1,"model":"inherit","effort":"inherit","tokens":55707,"tool_uses":16}
