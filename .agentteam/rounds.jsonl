@@ -36,3 +36,6 @@
 {"at":"2026-10-28T20:37:11Z","issue":6,"pr":null,"role":"manager","phase":"work order","fix_round":0,"model":"inherit","effort":"inherit","tokens":83349,"tool_uses":26}
 {"at":"2026-10-29T07:55:22Z","issue":6,"pr":32,"role":"developer","phase":"implementation","fix_round":0,"model":"inherit","effort":"inherit","tokens":298920,"tool_uses":128}
 {"at":"2026-10-29T08:02:41Z","issue":6,"pr":32,"role":"tester","phase":"review","fix_round":0,"model":"inherit","effort":"inherit","tokens":143303,"tool_uses":37}
+{"at":"2026-10-29T08:06:31Z","issue":6,"pr":32,"role":"manager","phase":"decision","fix_round":0,"model":"inherit","effort":"inherit","tokens":86629,"tool_uses":23}
+{"at":"2026-10-29T08:20:29Z","issue":6,"pr":32,"role":"developer","phase":"fix","fix_round":1,"model":"inherit","effort":"inherit","tokens":119699,"tool_uses":38}
+{"at":"2026-10-29T08:23:02Z","issue":6,"pr":32,"role":"tester","phase":"re-review","fix_round":1,"model":"inherit","effort":"inherit","tokens":51467,"tool_uses":15}
